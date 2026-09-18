@@ -7,7 +7,7 @@ stable, redacted incidents, resolves clear cases with deterministic rules, uses
 a provider-neutral decision interface for ambiguity, and sends optional signed
 notifications without remediating workloads.
 
-**Architecture:** A leader-elected Go controller watches an explicit read-only
+**Architecture:** A single-replica Go controller watches an explicit read-only
 resource set, queues keys, normalizes observations, and evaluates deterministic
 rules before any model call. A versioned composer combines rule results with
 validated provider evidence, then a MongoDB Atlas transaction commits the
@@ -40,8 +40,7 @@ These rules apply to every task:
 5. Never log or persist credentials, raw provider bodies, raw prompts, complete
    Kubernetes objects, environment values, arbitrary command arguments, or
    unallowlisted annotations.
-6. RuleRaven never mutates workloads. Kubernetes writes are limited to
-   leader-election Leases and optional Event creation/patching.
+6. RuleRaven never writes Kubernetes resources; watcher RBAC is read-only.
 7. A deterministic critical decision cannot be downgraded by provider output.
 8. Delivery is at-least-once. Stable event IDs and consumer deduplication are
    part of the contract; do not claim exactly-once behavior.
@@ -1010,8 +1009,9 @@ git commit -m "feat: add controller telemetry and readiness"
 
 ### Task 14: Package a hardened container and least-privilege Helm chart
 
-**Objective:** Render a secure two-replica deployment with explicit watch RBAC,
-configuration, probes, and optional integrations.
+**Objective:** Render a secure single-replica deployment with non-overlapping
+`Recreate` upgrades, explicit watch RBAC, configuration, probes, and optional
+integrations. Multi-replica operation waits for leader election.
 
 **Files:**
 
@@ -1038,7 +1038,7 @@ configuration, probes, and optional integrations.
 
 Use a Helm unit-test plugin or a repository script to assert namespace mode has
 only `get/list/watch` on Pods, Events, Deployments, StatefulSets, DaemonSets, and
-Jobs; a separate Role allows Lease operations. Assert no Secrets, ConfigMaps,
+Jobs. Assert no Secrets, ConfigMaps, Leases,
 pod logs, exec, Nodes, SubjectAccessReviews, TokenRequests, wildcard resources,
 or workload write verbs.
 
@@ -1110,7 +1110,7 @@ webhook, leader failover, and RBAC denials before calling the MVP complete.
 
 #### Task 15, step 1: Write a failing end-to-end assertion
 
-Create Kind, install two controller replicas, a test Mongo replica set, provider
+Create Kind, install one controller replica, a test Mongo replica set, provider
 stub, and smoke webhook. Apply the failed Job and wait with a bounded context for
 one persisted open incident and one valid signed delivery.
 
@@ -1129,7 +1129,7 @@ and diagnostics retained.
 
 Prove from real execution:
 
-1. two controller pods become Ready and exactly one holds the Lease;
+1. the single controller pod becomes Ready;
 2. failed Job creates one incident, snapshot, evaluation, and delivery;
 3. signature, timestamp, event ID, and envelope version validate;
 4. equivalent Event replay creates no extra evaluation or delivery;
@@ -1140,7 +1140,7 @@ Prove from real execution:
 9. restart after commit but before delivery loses no outbox work;
 10. concurrent dispatchers do not hold the same active lease;
 11. recovery/deletion creates exactly one resolved event;
-12. deleting the leader causes takeover and continued processing;
+12. restarting the controller resumes processing from persisted state;
 13. `kubectl auth can-i` denies Secret reads, pod exec, and workload patch/delete;
 14. all required unique/query/single-field TTL indexes exist; and
 15. captured logs contain none of the seeded secret/snapshot sentinels.
@@ -1289,7 +1289,8 @@ git commit -m "docs: document Alpha operations and release evidence"
 The MVP is complete only after Tasks 1–17 have executable evidence for all of
 the following:
 
-1. A Helm install creates two Ready replicas and exactly one leader.
+1. A Helm install creates one Ready replica and uses a non-overlapping
+   `Recreate` rollout until leader election exists.
 2. The ServiceAccount reads only the explicit resource set; Secret reads, pod
    exec, and workload mutation are denied.
 3. A failed Job creates one open incident, immutable snapshot, evaluation, and

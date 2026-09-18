@@ -28,6 +28,7 @@ import (
 	"github.com/ddalcero/ruleraven/internal/provider"
 	"github.com/ddalcero/ruleraven/internal/provider/anthropic"
 	"github.com/ddalcero/ruleraven/internal/provider/openai"
+	"github.com/ddalcero/ruleraven/internal/provider/openaicompat"
 	"github.com/ddalcero/ruleraven/internal/provider/openrouter"
 	"github.com/ddalcero/ruleraven/internal/provider/typesafe"
 	"github.com/ddalcero/ruleraven/internal/rules"
@@ -57,6 +58,7 @@ func NewProviderRegistry() (*provider.Registry, error) {
 	registry := provider.NewRegistry()
 	registrations := []func(*provider.Registry) error{
 		openai.Register,
+		openaicompat.Register,
 		anthropic.Register,
 		openrouter.Register,
 		typesafe.Register,
@@ -123,6 +125,10 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 	if err := config.Validate(cfg, ConfigOptions(options.ProviderRegistry, options.NotifierRegistry, options.LookupEnv)); err != nil {
 		return nil, err
 	}
+	logger, err := telemetry.NewLogger(cfg.Logging.Level, os.Stdout)
+	if err != nil {
+		return nil, err
+	}
 
 	restConfig := options.RESTConfig
 	if restConfig == nil {
@@ -170,7 +176,7 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		return cleanup(err)
 	}
 
-	normalizer := ravenkube.NewNormalizer(ravenkube.NormalizerOptions{ClusterID: cfg.Cluster.ID, MaxBytes: cfg.Controller.MaxNormalizedStateBytes})
+	normalizer := buildNormalizer(cfg)
 	engine := rules.NewEngine(rules.Options{
 		Now: options.Now, CrashLoopRestartThreshold: cfg.Rules.CrashLoopRestartThreshold,
 		CrashLoopCriticalThreshold: cfg.Rules.CrashLoopCriticalThreshold,
@@ -181,7 +187,7 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		ClusterID: cfg.Cluster.ID, Resolver: resolver, Normalizer: normalizer, Rules: engine, Store: store,
 		Primary: primary, Fallback: fallback, Composer: decision.NewComposer(), ProviderConfigHash: providerHash,
 		Destinations: destinationIDs, ReconcileTimeout: cfg.Controller.ReconcileTimeout.Duration,
-		EventQuietPeriod: cfg.Rules.EventQuietPeriod.Duration, Now: options.Now, NewID: controller.StableID, Metrics: metrics,
+		EventQuietPeriod: cfg.Rules.EventQuietPeriod.Duration, Now: options.Now, NewID: controller.StableID, Metrics: metrics, Logger: logger,
 	})
 	if err != nil {
 		return cleanup(err)
@@ -216,7 +222,7 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		Store: store, Notifiers: notifiers, WorkerID: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 		Workers: cfg.Controller.Workers, ClusterID: cfg.Cluster.ID, LeaseDuration: dispatchLeaseDuration,
 		MaxAttempts: cfg.Notifications.Retry.MaxAttempts, InitialBackoff: cfg.Notifications.Retry.InitialBackoff.Duration,
-		MaxBackoff: cfg.Notifications.Retry.MaxBackoff.Duration, Now: options.Now, Metrics: metrics,
+		MaxBackoff: cfg.Notifications.Retry.MaxBackoff.Duration, Now: options.Now, Metrics: metrics, Logger: logger,
 	})
 	if err != nil {
 		return cleanup(err)
@@ -230,6 +236,21 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		return cleanup(err)
 	}
 	return application, nil
+}
+
+func buildNormalizer(cfg config.Config) *ravenkube.Normalizer {
+	allowedLabels := make([]string, 0, len(cfg.Rules.IgnoredLabels))
+	seen := make(map[string]struct{}, len(cfg.Rules.IgnoredLabels))
+	for _, selector := range cfg.Rules.IgnoredLabels {
+		key, _, _ := strings.Cut(selector, "=")
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		allowedLabels = append(allowedLabels, key)
+	}
+	sort.Strings(allowedLabels)
+	return ravenkube.NewNormalizer(ravenkube.NormalizerOptions{ClusterID: cfg.Cluster.ID, AllowedLabels: allowedLabels, MaxBytes: cfg.Controller.MaxNormalizedStateBytes})
 }
 
 func buildProviders(cfg config.DecisionConfig, registry *provider.Registry, lookupEnv func(string) (string, bool), now func() time.Time) (provider.Provider, provider.Provider, string, error) {
@@ -266,7 +287,8 @@ func createProvider(cfg config.ProviderConfig, timeout time.Duration, registry *
 		MaxRetryAfter: 5 * time.Second, TotalTimeout: timeout, Sleep: sleepContext,
 	}
 	return registry.Create(cfg.Type, provider.FactoryConfig{
-		Model: cfg.Model, Credential: credential, HTTPClient: httpClient, Retry: retry,
+		Endpoint: cfg.Endpoint, Model: cfg.Model, StrictMode: cfg.StrictMode,
+		Credential: credential, HTTPClient: httpClient, Retry: retry,
 		MaxRequestBytes: providerMaxRequestBytes, MaxResponseBytes: providerMaxResponseBytes, Now: now,
 	})
 }

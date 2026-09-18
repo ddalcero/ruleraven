@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 )
 
 var administrativeDatabases = map[string]struct{}{"admin": {}, "local": {}, "config": {}}
@@ -15,6 +17,11 @@ var supportedKubernetesResources = map[string]struct{}{
 func Validate(cfg Config, options Options) error {
 	if cfg.Version != VersionV1Alpha1 {
 		return fmt.Errorf("unsupported config version %q", cfg.Version)
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Logging.Level)) {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("logging.level must be one of debug, info, warn, or error")
 	}
 	if strings.TrimSpace(cfg.Cluster.ID) == "" {
 		return fmt.Errorf("cluster.id is required")
@@ -94,6 +101,20 @@ func Validate(cfg Config, options Options) error {
 	if cfg.Rules.MinimumAge.Duration <= 0 || cfg.Rules.EventQuietPeriod.Duration <= 0 {
 		return fmt.Errorf("rules durations must be positive")
 	}
+	for _, selector := range cfg.Rules.IgnoredLabels {
+		if selector != strings.TrimSpace(selector) {
+			return fmt.Errorf("rules.ignoredLabels contains whitespace-padded selector %q", selector)
+		}
+		key, value, hasValue := strings.Cut(selector, "=")
+		if problems := k8svalidation.IsQualifiedName(key); len(problems) > 0 {
+			return fmt.Errorf("rules.ignoredLabels contains invalid selector %q", selector)
+		}
+		if hasValue {
+			if problems := k8svalidation.IsValidLabelValue(value); len(problems) > 0 {
+				return fmt.Errorf("rules.ignoredLabels contains invalid selector %q", selector)
+			}
+		}
+	}
 	seen := make(map[string]struct{}, len(cfg.Notifications.Destinations))
 	for _, destination := range cfg.Notifications.Destinations {
 		if destination.ID == "" {
@@ -152,6 +173,17 @@ func validateProvider(provider ProviderConfig, role string, options Options) err
 	}
 	if strings.TrimSpace(provider.Model) == "" {
 		return fmt.Errorf("%s provider model is required", role)
+	}
+	if provider.Type == "openai-compatible" {
+		endpoint, err := url.Parse(strings.TrimSpace(provider.Endpoint))
+		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+			return fmt.Errorf("%s openai-compatible provider endpoint must be an absolute HTTPS URL without credentials, query, or fragment", role)
+		}
+		if provider.StrictMode != "json_schema" && provider.StrictMode != "forced_tool" {
+			return fmt.Errorf("%s openai-compatible provider strictMode must be json_schema or forced_tool", role)
+		}
+	} else if strings.TrimSpace(provider.Endpoint) != "" || strings.TrimSpace(provider.StrictMode) != "" {
+		return fmt.Errorf("%s native provider must not override endpoint or strictMode", role)
 	}
 	return requireEnvironment(provider.CredentialEnv, role+" provider credentialEnv", options)
 }

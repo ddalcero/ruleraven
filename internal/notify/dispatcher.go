@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	storecontract "github.com/ddalcero/ruleraven/internal/store"
+	"github.com/ddalcero/ruleraven/internal/telemetry"
 )
 
 type OutboxStore interface {
@@ -41,6 +43,7 @@ type DispatcherConfig struct {
 	FailedExpiry    time.Duration
 	Now             func() time.Time
 	Metrics         DeliveryMetrics
+	Logger          *slog.Logger
 }
 
 type Dispatcher struct {
@@ -57,6 +60,7 @@ type Dispatcher struct {
 	failedExpiry    time.Duration
 	now             func() time.Time
 	metrics         DeliveryMetrics
+	logger          *slog.Logger
 }
 
 func NewDispatcher(config DispatcherConfig) (*Dispatcher, error) {
@@ -90,7 +94,7 @@ func NewDispatcher(config DispatcherConfig) (*Dispatcher, error) {
 		workers: config.Workers, clusterID: config.ClusterID, leaseDuration: config.LeaseDuration,
 		maxAttempts: config.MaxAttempts, initialBackoff: config.InitialBackoff,
 		maxBackoff: config.MaxBackoff, deliveredExpiry: config.DeliveredExpiry,
-		failedExpiry: config.FailedExpiry, now: config.Now, metrics: config.Metrics,
+		failedExpiry: config.FailedExpiry, now: config.Now, metrics: config.Metrics, logger: config.Logger,
 	}, nil
 }
 
@@ -111,6 +115,7 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 	}
 
 	notifier, found := d.notifiers[delivery.DestinationID]
+	deliveryStarted := time.Now()
 	var deliveryErr error
 	if !found {
 		deliveryErr = &Error{Kind: "unknown_destination"}
@@ -143,6 +148,7 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 			d.metrics.ObserveDeliveryAttempt(delivery.DestinationID, "success")
 			d.updatePending(ctx, request.CompletedAt)
 		}
+		telemetry.LogDelivery(ctx, d.logger, telemetry.DeliveryLog{Destination: delivery.DestinationID, DeliveryID: delivery.ID, Outcome: "success", Attempts: delivery.Attempts, Duration: time.Since(deliveryStarted)})
 		return true, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -183,6 +189,11 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 		d.metrics.ObserveDeliveryAttempt(delivery.DestinationID, outcome)
 		d.updatePending(ctx, requestNow)
 	}
+	logOutcome := "permanent"
+	if failure == storecontract.FailureRetryable {
+		logOutcome = "retryable"
+	}
+	telemetry.LogDelivery(ctx, d.logger, telemetry.DeliveryLog{Destination: delivery.DestinationID, DeliveryID: delivery.ID, Outcome: logOutcome, Attempts: delivery.Attempts, Duration: time.Since(deliveryStarted), Err: deliveryErr})
 	return true, nil
 }
 

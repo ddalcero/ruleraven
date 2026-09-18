@@ -3,9 +3,33 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"strings"
 	"time"
 )
+
+// NewLogger builds a JSON logger at the configured level.
+func NewLogger(level string, writer io.Writer) (*slog.Logger, error) {
+	if writer == nil {
+		return nil, fmt.Errorf("logging writer is required")
+	}
+	var parsed slog.Level
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		parsed = slog.LevelDebug
+	case "info", "":
+		parsed = slog.LevelInfo
+	case "warn":
+		parsed = slog.LevelWarn
+	case "error":
+		parsed = slog.LevelError
+	default:
+		return nil, fmt.Errorf("unsupported logging level %q", level)
+	}
+	return slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: parsed})), nil
+}
 
 type ReconcileLog struct {
 	ClusterID    string

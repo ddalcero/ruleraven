@@ -9,7 +9,8 @@ synthetic incidents, and credentials dedicated to the test.
 Before deploying:
 
 - use a cluster and MongoDB database that you are authorized to test;
-- keep `replicaCount: 1` because leader election is not implemented;
+- keep the enforced `replicaCount: 1`; the chart uses `Recreate` upgrades because
+  leader election is not implemented;
 - start in namespace-only mode and grant cluster-wide reads only when the test
   requires them;
 - never commit Secret manifests, rendered Secrets, provider keys, MongoDB URIs,
@@ -72,10 +73,10 @@ Set `decision.primary.type` to one production-registered provider:
 | `openai` | Strict JSON Schema chat output | OpenAI API key |
 | `anthropic` | Forced answer tool | Anthropic API key |
 
-The generic `openai-compatible` adapter supports explicit `json_schema` and
-`forced_tool` modes in its package and contract tests. The current `v1alpha1`
-production configuration and chart do not expose its endpoint or strict mode,
-so do not select it in Helm values yet.
+The generic `openai-compatible` adapter is registered in production. Set its
+absolute HTTPS `endpoint` and select `strictMode=json_schema` or
+`strictMode=forced_tool`. Native providers reject endpoint overrides, and
+unstructured output modes are rejected.
 
 A fallback is optional. If enabled, it must use a different provider type and a
 separate Secret key reference. RuleRaven sends only normalized, redacted
@@ -133,7 +134,6 @@ image:
 
 rbac:
   clusterWide: false
-  emitEvents: false
 
 cluster:
   id: isolated-test-cluster

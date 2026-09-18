@@ -43,7 +43,12 @@ type fakeProvider struct {
 	err      error
 }
 
-func (p *fakeProvider) Name() string { return "fake" }
+func (p *fakeProvider) Name() string {
+	if p.response.Provider != "" {
+		return p.response.Provider
+	}
+	return "fake"
+}
 func (p *fakeProvider) Evaluate(context.Context, provider.EvaluationRequest) (provider.EvaluationResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -166,10 +171,17 @@ func warningEvent() *corev1.Event {
 }
 
 func operationalAnswers() map[string]provider.Answer {
-	impact, immediate, transient := 2.0, 0.7, 0.1
+	impact, immediate, transient, confidence := 2.0, 0.7, 0.1, 0.9
 	return map[string]provider.Answer{
-		decision.QuestionIncidentFamily:             {Type: provider.QuestionTypeChoice, Choice: "infrastructure"},
-		decision.QuestionOperationalImpact:          {Type: provider.QuestionTypeScore, Score: &impact, Legend: map[string]string{"0": "No current user-visible impact", "1": "Limited degradation or a working workaround", "2": "Material degradation affecting multiple users or a critical workload", "3": "Broad outage, data-loss risk, or security impact"}},
+		decision.QuestionIncidentFamily: {
+			Type: provider.QuestionTypeChoice, Choice: "infrastructure", Confidence: &confidence,
+			Probabilities: map[string]float64{"application": 0, "configuration": 0, "dependency": 0, "infrastructure": 1, "security": 0, "unknown": 0},
+		},
+		decision.QuestionOperationalImpact: {
+			Type: provider.QuestionTypeScore, Score: &impact, Confidence: &confidence,
+			Legend:        map[string]string{"0": "No current user-visible impact", "1": "Limited degradation or a working workaround", "2": "Material degradation affecting multiple users or a critical workload", "3": "Broad outage, data-loss risk, or security impact"},
+			Probabilities: map[string]float64{"0": 0, "1": 0, "2": 1, "3": 0},
+		},
 		decision.QuestionRequiresImmediateAttention: {Type: provider.QuestionTypeNoul, Noul: &immediate},
 		decision.QuestionLikelyTransient:            {Type: provider.QuestionTypeNoul, Noul: &transient},
 	}
@@ -207,7 +219,7 @@ func newReconcilerWithTelemetry(t *testing.T, resolver *fakeResolver, store *mem
 func TestReconcilerEmitsReconcileIncidentAndProviderMetrics(t *testing.T) {
 	metrics := telemetry.NewMetrics()
 	providerSpy := &fakeProvider{response: provider.EvaluationResponse{
-		Answers: operationalAnswers(), Provider: "fake", ResolvedModel: "model-a", Attempts: 2,
+		Answers: operationalAnswers(), Provider: "fake", RequestedModel: "model-a", ResolvedModel: "model-a", Attempts: 2,
 	}}
 	reconciler := newReconcilerWithTelemetry(t, &fakeResolver{object: warningEvent()}, newMemoryStore(), providerSpy, nil, func() time.Time { return fixedNow }, metrics)
 	if _, err := reconciler.Reconcile(context.Background(), ravenkube.ResourceKey{Kind: "Event", Namespace: "watched", Name: "warning.1", UID: "event-uid"}); err != nil {
@@ -283,6 +295,67 @@ func TestSemanticEventUsesFallbackProvider(t *testing.T) {
 	}
 	if got := store.onlyEvaluation(t).Decision.Severity; got != domain.SeverityWarning {
 		t.Fatalf("severity = %q, want warning", got)
+	}
+}
+
+func TestSemanticEventPersistsProviderAuditMetadata(t *testing.T) {
+	store := newMemoryStore()
+	response := provider.EvaluationResponse{
+		Answers: operationalAnswers(), Provider: "openai", RequestedModel: "configured-model",
+		ResolvedModel: "configured-model-20260918", ProviderRequestID: "provider-request-1",
+		Usage: provider.Usage{InputTokens: 41, OutputTokens: 7}, Latency: 125 * time.Millisecond,
+		Attempts: 2, RawResponseHash: "sha256:response",
+	}
+	reconciler := newReconciler(t, &fakeResolver{object: warningEvent()}, store, &fakeProvider{response: response}, nil)
+
+	if _, err := reconciler.Reconcile(context.Background(), ravenkube.ResourceKey{Kind: "Event", Namespace: "watched", Name: "warning.1", UID: "event-uid"}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	audit := store.onlyEvaluation(t).ProviderAudit
+	if audit == nil {
+		t.Fatal("provider audit metadata was discarded")
+	}
+	if audit.Provider != response.Provider || audit.RequestedModel != response.RequestedModel || audit.ResolvedModel != response.ResolvedModel || !strings.HasPrefix(audit.ProviderRequestIDHash, "sha256:") || strings.Contains(audit.ProviderRequestIDHash, response.ProviderRequestID) || audit.Usage.InputTokens != 41 || audit.Usage.OutputTokens != 7 || audit.Latency != response.Latency || audit.Attempts != response.Attempts || audit.RawResponseHash != response.RawResponseHash {
+		t.Fatalf("provider audit = %#v, want metadata from %#v", audit, response)
+	}
+}
+
+func TestProviderControlledAuditStringsAreHashed(t *testing.T) {
+	const secret = "sentinel-provider-secret"
+	store := newMemoryStore()
+	response := provider.EvaluationResponse{
+		Answers: operationalAnswers(), Provider: "openai", RequestedModel: "configured-model",
+		ResolvedModel: secret, ProviderRequestID: secret, RawResponseHash: "sha256:response", Attempts: 1,
+	}
+	reconciler := newReconciler(t, &fakeResolver{object: warningEvent()}, store, &fakeProvider{response: response}, nil)
+	if _, err := reconciler.Reconcile(context.Background(), ravenkube.ResourceKey{Kind: "Event", Namespace: "watched", Name: "warning.1", UID: "event-uid"}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	audit := store.onlyEvaluation(t).ProviderAudit
+	if audit == nil || audit.ResolvedModel != "" || !strings.HasPrefix(audit.ResolvedModelHash, "sha256:") || !strings.HasPrefix(audit.ProviderRequestIDHash, "sha256:") {
+		t.Fatalf("unsafe audit metadata handling: %#v", audit)
+	}
+	if strings.Contains(audit.ResolvedModelHash, secret) || strings.Contains(audit.ProviderRequestIDHash, secret) {
+		t.Fatalf("provider-controlled value leaked through hashes: %#v", audit)
+	}
+}
+
+func TestFallbackProviderAuditIdentifiesSuccessfulFallback(t *testing.T) {
+	store := newMemoryStore()
+	primary := &fakeProvider{err: errors.New("primary unavailable")}
+	fallbackResponse := provider.EvaluationResponse{
+		Answers: operationalAnswers(), Provider: "anthropic", RequestedModel: "claude-requested",
+		ResolvedModel: "claude-requested-20260918", ProviderRequestID: "msg-fallback", Attempts: 1,
+		RawResponseHash: "sha256:fallback",
+	}
+	reconciler := newReconciler(t, &fakeResolver{object: warningEvent()}, store, primary, &fakeProvider{response: fallbackResponse})
+
+	if _, err := reconciler.Reconcile(context.Background(), ravenkube.ResourceKey{Kind: "Event", Namespace: "watched", Name: "warning.1", UID: "event-uid"}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	audit := store.onlyEvaluation(t).ProviderAudit
+	if audit == nil || audit.Provider != "anthropic" || !strings.HasPrefix(audit.ProviderRequestIDHash, "sha256:") || strings.Contains(audit.ProviderRequestIDHash, "msg-fallback") || audit.RawResponseHash != "sha256:fallback" {
+		t.Fatalf("fallback provider audit = %#v", audit)
 	}
 }
 

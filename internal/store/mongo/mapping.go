@@ -107,17 +107,35 @@ type decisionDocument struct {
 	RuleIDs     []string        `bson:"rule_ids,omitempty"`
 }
 
+type providerUsageDocument struct {
+	InputTokens  int `bson:"input_tokens,omitempty"`
+	OutputTokens int `bson:"output_tokens,omitempty"`
+}
+
+type providerAuditDocument struct {
+	Provider              string                `bson:"provider"`
+	RequestedModel        string                `bson:"requested_model"`
+	ResolvedModel         string                `bson:"resolved_model,omitempty"`
+	ResolvedModelHash     string                `bson:"resolved_model_hash,omitempty"`
+	ProviderRequestIDHash string                `bson:"provider_request_id_hash,omitempty"`
+	Usage                 providerUsageDocument `bson:"usage"`
+	Latency               time.Duration         `bson:"latency"`
+	Attempts              int                   `bson:"attempts"`
+	RawResponseHash       string                `bson:"raw_response_hash"`
+}
+
 type evaluationDocument struct {
-	ID                 string           `bson:"_id"`
-	IncidentID         string           `bson:"incident_id"`
-	SnapshotHash       string           `bson:"snapshot_hash"`
-	PolicyVersion      string           `bson:"policy_version"`
-	RubricVersion      string           `bson:"rubric_version"`
-	ProviderConfigHash string           `bson:"provider_config_hash"`
-	Decision           decisionDocument `bson:"decision"`
-	Answers            map[string]any   `bson:"answers,omitempty"`
-	CreatedAt          time.Time        `bson:"created_at"`
-	ExpiresAt          *time.Time       `bson:"expires_at,omitempty"`
+	ID                 string                 `bson:"_id"`
+	IncidentID         string                 `bson:"incident_id"`
+	SnapshotHash       string                 `bson:"snapshot_hash"`
+	PolicyVersion      string                 `bson:"policy_version"`
+	RubricVersion      string                 `bson:"rubric_version"`
+	ProviderConfigHash string                 `bson:"provider_config_hash"`
+	Decision           decisionDocument       `bson:"decision"`
+	Answers            map[string]any         `bson:"answers,omitempty"`
+	ProviderAudit      *providerAuditDocument `bson:"provider_audit,omitempty"`
+	CreatedAt          time.Time              `bson:"created_at"`
+	ExpiresAt          *time.Time             `bson:"expires_at,omitempty"`
 }
 
 type outboxDocument struct {
@@ -203,7 +221,19 @@ func snapshotFromDocument(value snapshotDocument) storecontract.Snapshot {
 }
 
 func evaluationToDocument(value domain.Evaluation, expiresAt *time.Time) evaluationDocument {
-	return evaluationDocument{ID: value.ID, IncidentID: value.IncidentID, SnapshotHash: value.SnapshotHash, PolicyVersion: value.PolicyVersion, RubricVersion: value.RubricVersion, ProviderConfigHash: value.ProviderConfigHash, Decision: decisionDocument{Severity: value.Decision.Severity, Action: value.Decision.Action, Summary: value.Decision.Summary, ReasonCodes: value.Decision.ReasonCodes, RuleIDs: value.Decision.RuleIDs}, Answers: value.Answers, CreatedAt: value.CreatedAt, ExpiresAt: expiresAt}
+	document := evaluationDocument{ID: value.ID, IncidentID: value.IncidentID, SnapshotHash: value.SnapshotHash, PolicyVersion: value.PolicyVersion, RubricVersion: value.RubricVersion, ProviderConfigHash: value.ProviderConfigHash, Decision: decisionDocument{Severity: value.Decision.Severity, Action: value.Decision.Action, Summary: value.Decision.Summary, ReasonCodes: value.Decision.ReasonCodes, RuleIDs: value.Decision.RuleIDs}, Answers: value.Answers, CreatedAt: value.CreatedAt, ExpiresAt: expiresAt}
+	if value.ProviderAudit != nil {
+		document.ProviderAudit = &providerAuditDocument{Provider: value.ProviderAudit.Provider, RequestedModel: value.ProviderAudit.RequestedModel, ResolvedModel: value.ProviderAudit.ResolvedModel, ResolvedModelHash: value.ProviderAudit.ResolvedModelHash, ProviderRequestIDHash: value.ProviderAudit.ProviderRequestIDHash, Usage: providerUsageDocument{InputTokens: value.ProviderAudit.Usage.InputTokens, OutputTokens: value.ProviderAudit.Usage.OutputTokens}, Latency: value.ProviderAudit.Latency, Attempts: value.ProviderAudit.Attempts, RawResponseHash: value.ProviderAudit.RawResponseHash}
+	}
+	return document
+}
+
+func evaluationFromDocument(value evaluationDocument) domain.Evaluation {
+	evaluation := domain.Evaluation{ID: value.ID, IncidentID: value.IncidentID, SnapshotHash: value.SnapshotHash, PolicyVersion: value.PolicyVersion, RubricVersion: value.RubricVersion, ProviderConfigHash: value.ProviderConfigHash, Decision: domain.Decision{Severity: value.Decision.Severity, Action: value.Decision.Action, Summary: value.Decision.Summary, ReasonCodes: value.Decision.ReasonCodes, RuleIDs: value.Decision.RuleIDs}, Answers: value.Answers, CreatedAt: value.CreatedAt}
+	if value.ProviderAudit != nil {
+		evaluation.ProviderAudit = &domain.ProviderAudit{Provider: value.ProviderAudit.Provider, RequestedModel: value.ProviderAudit.RequestedModel, ResolvedModel: value.ProviderAudit.ResolvedModel, ResolvedModelHash: value.ProviderAudit.ResolvedModelHash, ProviderRequestIDHash: value.ProviderAudit.ProviderRequestIDHash, Usage: domain.ProviderUsage{InputTokens: value.ProviderAudit.Usage.InputTokens, OutputTokens: value.ProviderAudit.Usage.OutputTokens}, Latency: value.ProviderAudit.Latency, Attempts: value.ProviderAudit.Attempts, RawResponseHash: value.ProviderAudit.RawResponseHash}
+	}
+	return evaluation
 }
 
 func outboxToDocument(value domain.Notification, now time.Time, expiresAt *time.Time) outboxDocument {

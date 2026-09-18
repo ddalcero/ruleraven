@@ -26,11 +26,11 @@ The current implementation:
 - exposes `/healthz`, `/readyz`, and Prometheus-format `/metrics`; and
 - ships a non-root distroless image build and a least-privilege Helm chart.
 
-The provider implementations cover direct TypeSafe/Jev, OpenRouter Decisions,
-OpenAI structured output, Anthropic forced-tool output, and a strict generic
-OpenAI-compatible adapter. The production `v1alpha1` configuration currently
-registers `typesafe`, `openrouter`, `openai`, and `anthropic`; custom endpoint and
-strict-mode settings for the generic adapter are not exposed by the chart yet.
+The production provider registry covers direct TypeSafe/Jev, OpenRouter
+Decisions, OpenAI structured output, Anthropic forced-tool output, and a strict
+generic `openai-compatible` adapter. Generic endpoints must use HTTPS and
+explicitly select `json_schema` or `forced_tool`; native providers reject
+endpoint overrides and unstructured text modes are rejected.
 
 An Alpha EKS smoke deployment has exercised health and readiness, metrics, a
 live Jev decision, MongoDB indexes and transactions, outbox dispatch, and a
@@ -163,8 +163,8 @@ provider choices, RBAC checks, Atlas requirements, verification, and cleanup.
   compatibility promise, signed release image, SBOM, or production support.
 - Automatic remediation is intentionally absent; output is advisory and
   notification-only.
-- Leader election is not implemented. The chart defaults to one replica; do not
-  scale it above one until active/standby coordination exists.
+- Leader election is not implemented. The chart enforces one replica and uses a
+  `Recreate` rollout so upgrades cannot overlap controllers.
 - MongoDB transactions require a replica set. The current live smoke uses an
   ephemeral, single-node in-cluster replica set because the available Atlas API
   keys and database users could not provision the isolated Atlas test database.
@@ -176,9 +176,6 @@ provider choices, RBAC checks, Atlas requirements, verification, and cleanup.
   every target cluster instead of treating rendered RBAC as the whole policy.
 - A quick Cloudflare tunnel can be useful for a short webhook smoke test, but it
   is temporary test infrastructure and is not a supported deployment endpoint.
-- The generic OpenAI-compatible adapter exists and is contract-tested, but its
-  endpoint and strict mode are not configurable through the current production
-  config or Helm values.
 
 ## Collaboration
 

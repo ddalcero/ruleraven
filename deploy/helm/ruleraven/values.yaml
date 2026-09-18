@@ -17,7 +17,6 @@ serviceAccount:
 rbac:
   create: true
   clusterWide: false
-  emitEvents: false
 
 cluster:
   id: ruleraven-test
@@ -41,6 +40,9 @@ decision:
   primary:
     type: openrouter
     model: typesafe/jev-1.13
+    # Required only for type: openai-compatible.
+    endpoint: ""
+    strictMode: ""
     existingSecret:
       name: ruleraven-credentials
       key: openrouter-api-key
@@ -48,6 +50,8 @@ decision:
     enabled: false
     type: anthropic
     model: claude-3-5-haiku-latest
+    endpoint: ""
+    strictMode: ""
     existingSecret:
       name: ruleraven-credentials
       key: anthropic-api-key

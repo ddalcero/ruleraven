@@ -3,7 +3,8 @@
   "additionalProperties": false,
   "properties": {
     "replicaCount": {
-      "type": "integer"
+      "type": "integer",
+      "const": 1
     },
     "image": {
       "type": "object",
@@ -58,9 +59,6 @@
           "type": "boolean"
         },
         "clusterWide": {
-          "type": "boolean"
-        },
-        "emitEvents": {
           "type": "boolean"
         }
       }
@@ -136,6 +134,12 @@
             "model": {
               "type": "string"
             },
+            "endpoint": {
+              "type": "string"
+            },
+            "strictMode": {
+              "type": "string"
+            },
             "existingSecret": {
               "type": "object",
               "additionalProperties": false,
@@ -148,7 +152,52 @@
                 }
               }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "openai-compatible"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              },
+              "then": {
+                "required": [
+                  "endpoint",
+                  "strictMode"
+                ],
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)*$"
+                  },
+                  "strictMode": {
+                    "type": "string",
+                    "enum": [
+                      "json_schema",
+                      "forced_tool"
+                    ]
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "maxLength": 0
+                  },
+                  "strictMode": {
+                    "type": "string",
+                    "maxLength": 0
+                  }
+                }
+              }
+            }
+          ]
         },
         "fallback": {
           "type": "object",
@@ -163,6 +212,12 @@
             "model": {
               "type": "string"
             },
+            "endpoint": {
+              "type": "string"
+            },
+            "strictMode": {
+              "type": "string"
+            },
             "existingSecret": {
               "type": "object",
               "additionalProperties": false,
@@ -175,7 +230,52 @@
                 }
               }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "openai-compatible"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              },
+              "then": {
+                "required": [
+                  "endpoint",
+                  "strictMode"
+                ],
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)*$"
+                  },
+                  "strictMode": {
+                    "type": "string",
+                    "enum": [
+                      "json_schema",
+                      "forced_tool"
+                    ]
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "maxLength": 0
+                  },
+                  "strictMode": {
+                    "type": "string",
+                    "maxLength": 0
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -261,7 +361,10 @@
         },
         "ignoredLabels": {
           "type": "array",
-          "items": {}
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },

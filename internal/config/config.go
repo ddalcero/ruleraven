@@ -72,6 +72,8 @@ type ProviderConfig struct {
 	Type          string `yaml:"type"`
 	Model         string `yaml:"model"`
 	CredentialEnv string `yaml:"credentialEnv"`
+	Endpoint      string `yaml:"endpoint,omitempty"`
+	StrictMode    string `yaml:"strictMode,omitempty"`
 }
 
 type DecisionConfig struct {

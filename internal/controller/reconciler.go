@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/ddalcero/ruleraven/internal/provider"
 	"github.com/ddalcero/ruleraven/internal/rules"
 	storecontract "github.com/ddalcero/ruleraven/internal/store"
+	"github.com/ddalcero/ruleraven/internal/telemetry"
 )
 
 const (
@@ -64,6 +66,7 @@ type Config struct {
 	Now                func() time.Time
 	NewID              func(string) string
 	Metrics            Metrics
+	Logger             *slog.Logger
 }
 
 type Result struct{ RequeueAfter time.Duration }
@@ -84,6 +87,7 @@ type Reconciler struct {
 	now                func() time.Time
 	newID              func(string) string
 	metrics            Metrics
+	logger             *slog.Logger
 }
 
 func NewReconciler(config Config) (*Reconciler, error) {
@@ -108,12 +112,22 @@ func NewReconciler(config Config) (*Reconciler, error) {
 		rules: config.Rules, store: config.Store, primary: config.Primary, fallback: config.Fallback,
 		composer: config.Composer, providerConfigHash: config.ProviderConfigHash,
 		destinations: destinations, timeout: config.ReconcileTimeout, eventQuietPeriod: config.EventQuietPeriod,
-		now: config.Now, newID: config.NewID, metrics: config.Metrics,
+		now: config.Now, newID: config.NewID, metrics: config.Metrics, logger: config.Logger,
 	}, nil
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, key ravenkube.ResourceKey) (result Result, err error) {
 	started := time.Now()
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		telemetry.LogReconcile(ctx, r.logger, telemetry.ReconcileLog{
+			ClusterID: r.clusterID, ResourceKind: key.Kind, Namespace: key.Namespace,
+			ResourceName: key.Name, Outcome: outcome, Duration: time.Since(started), Err: err,
+		})
+	}()
 	if r.metrics != nil {
 		defer func() {
 			outcome := "success"
@@ -198,7 +212,7 @@ func (r *Reconciler) persist(ctx context.Context, snapshot domain.Snapshot, prev
 		return fmt.Errorf("upsert snapshot: %w", err)
 	}
 
-	decisionValue, answers := r.decide(ctx, snapshot, result, incident.ID)
+	decisionValue, answers, providerAudit := r.decide(ctx, snapshot, result, incident.ID)
 	status := statusFor(result)
 	incident.Source = snapshot.Source
 	incident.Status = status
@@ -217,7 +231,7 @@ func (r *Reconciler) persist(ctx context.Context, snapshot domain.Snapshot, prev
 	evaluation := domain.Evaluation{
 		ID: evaluationID, IncidentID: incident.ID, SnapshotHash: snapshot.ContentHash,
 		PolicyVersion: policyVersion, RubricVersion: rubricVersion, ProviderConfigHash: r.providerConfigHash,
-		Decision: decisionValue, Answers: answers, CreatedAt: now,
+		Decision: decisionValue, Answers: answers, ProviderAudit: providerAudit, CreatedAt: now,
 	}
 	eventType := eventUpdated
 	if created {
@@ -244,13 +258,13 @@ func (r *Reconciler) persist(ctx context.Context, snapshot domain.Snapshot, prev
 	return nil
 }
 
-func (r *Reconciler) decide(ctx context.Context, snapshot domain.Snapshot, result rules.Result, incidentID string) (domain.Decision, map[string]any) {
+func (r *Reconciler) decide(ctx context.Context, snapshot domain.Snapshot, result rules.Result, incidentID string) (domain.Decision, map[string]any, *domain.ProviderAudit) {
 	if result.Disposition != rules.DispositionSemantic {
-		return r.composer.Compose(result, nil, nil), nil
+		return r.composer.Compose(result, nil, nil), nil, nil
 	}
 	state, err := json.Marshal(snapshot)
 	if err != nil {
-		return r.composer.Compose(result, nil, err), nil
+		return r.composer.Compose(result, nil, err), nil, nil
 	}
 	requestID := r.newID("request\x00" + incidentID + "\x00" + snapshot.ContentHash)
 	request := provider.EvaluationRequest{State: state, Questions: decision.OperationalTriageV1Questions(), RubricVersion: result.QuestionSet, RequestID: requestID}
@@ -260,36 +274,86 @@ func (r *Reconciler) decide(ctx context.Context, snapshot domain.Snapshot, resul
 	}
 	composed := r.composer.Compose(result, response.Answers, providerErr)
 	if providerErr != nil {
-		return composed, nil
+		return composed, nil, nil
 	}
 	answers := make(map[string]any, len(response.Answers))
 	for id, answer := range response.Answers {
 		answers[id] = answer
 	}
-	return composed, answers
+	return composed, answers, &domain.ProviderAudit{
+		Provider: response.Provider, RequestedModel: response.RequestedModel,
+		ResolvedModel:     trustedResolvedModel(response.RequestedModel, response.ResolvedModel),
+		ResolvedModelHash: auditHash(response.ResolvedModel), ProviderRequestIDHash: auditHash(response.ProviderRequestID),
+		Usage:   domain.ProviderUsage{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens},
+		Latency: response.Latency, Attempts: response.Attempts, RawResponseHash: response.RawResponseHash,
+	}
 }
 
 func (r *Reconciler) evaluateProvider(ctx context.Context, evaluator provider.Provider, request provider.EvaluationRequest) (provider.EvaluationResponse, error) {
 	started := time.Now()
 	response, err := evaluator.Evaluate(ctx, request)
+	if err == nil {
+		if response.Provider != evaluator.Name() || strings.TrimSpace(response.RequestedModel) == "" {
+			err = fmt.Errorf("provider returned inconsistent audit metadata")
+		} else {
+			err = provider.ValidateAnswers(request.Questions, response.Answers)
+		}
+	}
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	model := response.RequestedModel
+	if resolved := trustedResolvedModel(response.RequestedModel, response.ResolvedModel); resolved != "" {
+		model = resolved
+	}
+	telemetry.LogProvider(ctx, r.logger, telemetry.ProviderLog{
+		Provider: evaluator.Name(), Model: model, RequestID: request.RequestID,
+		Outcome: outcome, Attempts: response.Attempts, Duration: time.Since(started), Err: err,
+	})
 	if r.metrics != nil {
-		outcome := "success"
-		if err != nil {
-			outcome = "error"
-		}
-		model := response.ResolvedModel
-		if model == "" {
-			model = response.RequestedModel
-		}
 		r.metrics.ObserveProviderRequest(evaluator.Name(), model, outcome, time.Since(started), response.Attempts)
 	}
 	if err != nil {
 		return provider.EvaluationResponse{}, err
 	}
-	if err := provider.ValidateAnswers(request.Questions, response.Answers); err != nil {
-		return provider.EvaluationResponse{}, err
-	}
 	return response, nil
+}
+
+func auditHash(value string) string {
+	if value == "" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(value))
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+// trustedResolvedModel permits common dated/qualified model resolutions while
+// preventing provider-controlled strings from entering logs or persistence.
+// Every raw resolved value is still retained as a one-way audit hash.
+func trustedResolvedModel(requested, resolved string) string {
+	if resolved == "" || len(resolved) > 256 {
+		return ""
+	}
+	trusted := resolved == requested
+	if !trusted {
+		for _, separator := range []string{"-", ".", ":", "/"} {
+			if strings.HasPrefix(resolved, requested+separator) {
+				trusted = true
+				break
+			}
+		}
+	}
+	if !trusted {
+		return ""
+	}
+	for _, character := range resolved {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || strings.ContainsRune("-._:/", character) {
+			continue
+		}
+		return ""
+	}
+	return resolved
 }
 
 func (r *Reconciler) resolveDeletion(ctx context.Context, key ravenkube.ResourceKey) error {

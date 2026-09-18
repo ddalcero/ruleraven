@@ -35,11 +35,23 @@ data:
         type: {{ .Values.decision.primary.type | quote }}
         model: {{ .Values.decision.primary.model | quote }}
         credentialEnv: PROVIDER_KEY
+        {{- if eq .Values.decision.primary.type "openai-compatible" }}
+        endpoint: {{ .Values.decision.primary.endpoint | quote }}
+        {{- end }}
+        {{- if eq .Values.decision.primary.type "openai-compatible" }}
+        strictMode: {{ .Values.decision.primary.strictMode | quote }}
+        {{- end }}
       {{- if .Values.decision.fallback.enabled }}
       fallback:
         type: {{ .Values.decision.fallback.type | quote }}
         model: {{ .Values.decision.fallback.model | quote }}
         credentialEnv: FALLBACK_PROVIDER_KEY
+        {{- if eq .Values.decision.fallback.type "openai-compatible" }}
+        endpoint: {{ .Values.decision.fallback.endpoint | quote }}
+        {{- end }}
+        {{- if eq .Values.decision.fallback.type "openai-compatible" }}
+        strictMode: {{ .Values.decision.fallback.strictMode | quote }}
+        {{- end }}
       {{- end }}
       timeout: {{ .Values.decision.timeout | quote }}
     notifications:

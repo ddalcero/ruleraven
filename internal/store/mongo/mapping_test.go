@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,5 +50,28 @@ func TestDeliveryMappingIncludesLeaseAndFailureClassification(t *testing.T) {
 	got := deliveryFromDocument(doc)
 	if got.LeaseOwner != "worker-1" || got.LeaseUntil == nil || !got.LeaseUntil.Equal(lease) || got.LastFailure != store.FailureRetryable {
 		t.Fatalf("delivery mapping = %#v", got)
+	}
+}
+
+func TestEvaluationProviderAuditRoundTripsWithoutRawResponse(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	evaluation := domain.Evaluation{
+		ID: "evaluation-1", IncidentID: "incident-1", SnapshotHash: "snapshot-hash",
+		PolicyVersion: "policy-v1", RubricVersion: "rubric-v1", ProviderConfigHash: "config-hash",
+		Decision:      domain.Decision{Severity: domain.SeverityWarning, Action: domain.ActionNotify, Summary: "safe"},
+		ProviderAudit: &domain.ProviderAudit{Provider: "openai", RequestedModel: "requested", ResolvedModel: "requested-20260918", ResolvedModelHash: "sha256:resolved-model", ProviderRequestIDHash: "sha256:provider-request", Usage: domain.ProviderUsage{InputTokens: 12, OutputTokens: 4}, Latency: 50 * time.Millisecond, Attempts: 2, RawResponseHash: "sha256:only-the-hash"},
+		CreatedAt:     now,
+	}
+	doc := evaluationToDocument(evaluation, nil)
+	raw, err := bson.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "raw_response\x00") || strings.Contains(string(raw), "provider-secret-body") {
+		t.Fatalf("raw provider response leaked into BSON: %q", raw)
+	}
+	got := evaluationFromDocument(doc)
+	if !reflect.DeepEqual(got, evaluation) {
+		t.Fatalf("evaluation round trip = %#v, want %#v", got, evaluation)
 	}
 }

@@ -15,9 +15,4 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch"]
-  {{- if .Values.rbac.emitEvents }}
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["create", "patch"]
-  {{- end }}
 {{- end }}

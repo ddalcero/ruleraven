@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/ddalcero/ruleraven/internal/config"
 	"github.com/ddalcero/ruleraven/internal/provider"
 )
@@ -63,7 +66,7 @@ func TestProductionRegistriesExposeOnlyCompiledFactories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantProviders := []string{"anthropic", "openai", "openrouter", "typesafe"}
+	wantProviders := []string{"anthropic", "openai", "openai-compatible", "openrouter", "typesafe"}
 	if got := providers.Types(); len(got) != len(wantProviders) {
 		t.Fatalf("provider types = %v, want %v", got, wantProviders)
 	} else {
@@ -79,5 +82,27 @@ func TestProductionRegistriesExposeOnlyCompiledFactories(t *testing.T) {
 	}
 	if got := notifiers.Types(); len(got) != 1 || got[0] != "webhook" {
 		t.Fatalf("notifier types = %v, want [webhook]", got)
+	}
+}
+
+func TestProductionNormalizerRetainsIgnoredLabelKeys(t *testing.T) {
+	cfg := config.Config{
+		Cluster:    config.ClusterConfig{ID: "cluster-a"},
+		Controller: config.ControllerConfig{MaxNormalizedStateBytes: 4096},
+		Rules:      config.RulesConfig{IgnoredLabels: []string{"ruleraven.io/ignore=true", "maintenance"}},
+	}
+	normalizer := buildNormalizer(cfg)
+	snapshot, err := normalizer.Normalize(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "ignored", Namespace: "default",
+		Labels: map[string]string{"ruleraven.io/ignore": "true", "maintenance": "window-1", "unrelated": "must-not-be-retained"},
+	}}, time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Labels["ruleraven.io/ignore"] != "true" || snapshot.Labels["maintenance"] != "window-1" {
+		t.Fatalf("ignored labels missing from production snapshot: %#v", snapshot.Labels)
+	}
+	if _, retained := snapshot.Labels["unrelated"]; retained {
+		t.Fatalf("unrelated label retained in production snapshot: %#v", snapshot.Labels)
 	}
 }

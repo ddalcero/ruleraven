@@ -74,8 +74,8 @@ security-relevant:
 - RuleRaven does not automatically remediate or mutate workloads.
 - Workload access is read-only and allowlisted; Secret reads, pod execution,
   pod logs, nodes, and wildcard RBAC are excluded.
-- Kubernetes writes are limited to leader-election Leases and explicitly enabled
-  Event emission.
+- Kubernetes access is read-only; the controller does not request Lease or Event
+  write permissions.
 - Snapshots are allowlisted and redacted rather than complete object dumps.
 - Provider state, raw responses, API keys, webhook secrets, and Atlas connection
   strings are not logged or persisted by default.

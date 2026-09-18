@@ -57,3 +57,19 @@ func TestStructuredLoggingDoesNotLeakSensitivePayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestNewLoggerHonorsConfiguredLevel(t *testing.T) {
+	var output bytes.Buffer
+	logger, err := telemetry.NewLogger("warn", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Info("filtered-info")
+	logger.Warn("visible-warning")
+	if strings.Contains(output.String(), "filtered-info") || !strings.Contains(output.String(), "visible-warning") {
+		t.Fatalf("unexpected level filtering: %s", output.String())
+	}
+	if _, err := telemetry.NewLogger("verbose", &output); err == nil {
+		t.Fatal("NewLogger accepted unsupported level")
+	}
+}

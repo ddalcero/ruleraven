@@ -71,7 +71,7 @@ func options() config.Options {
 	}
 	return config.Options{
 		LookupEnv:     func(key string) (string, bool) { value, ok := values[key]; return value, ok },
-		ProviderTypes: map[string]struct{}{"openai": {}, "anthropic": {}},
+		ProviderTypes: map[string]struct{}{"openai": {}, "anthropic": {}, "openai-compatible": {}},
 		NotifierTypes: map[string]struct{}{"webhook": {}},
 	}
 }
@@ -83,6 +83,26 @@ func TestLoadValidAndDefaults(t *testing.T) {
 	}
 	if cfg.Version != "v1alpha1" || cfg.Controller.Workers <= 0 {
 		t.Fatalf("unexpected config: %#v", cfg)
+	}
+}
+
+func TestLoadOpenAICompatibleRequiresEndpointAndStrictMode(t *testing.T) {
+	compatible := strings.Replace(validYAML(), "type: openai\n    model: model", "type: openai-compatible\n    model: model\n    endpoint: https://gateway.example.com\n    strictMode: forced_tool", 1)
+	cfg, err := config.Load(strings.NewReader(compatible), options())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Decision.Primary.Endpoint != "https://gateway.example.com" || cfg.Decision.Primary.StrictMode != "forced_tool" {
+		t.Fatalf("openai-compatible configuration was not retained: %#v", cfg.Decision.Primary)
+	}
+	for _, bad := range []struct{ old, replacement, want string }{
+		{"    endpoint: https://gateway.example.com\n", "", "endpoint"},
+		{"endpoint: https://gateway.example.com", "endpoint: http://gateway.example.com", "HTTPS"},
+		{"strictMode: forced_tool", "strictMode: text", "strictMode"},
+	} {
+		if _, err := config.Load(strings.NewReader(strings.Replace(compatible, bad.old, bad.replacement, 1)), options()); err == nil || !strings.Contains(err.Error(), bad.want) {
+			t.Fatalf("Load() error = %v, want containing %q", err, bad.want)
+		}
 	}
 }
 
@@ -102,6 +122,9 @@ func TestValidateRejectsUnsafeOrInconsistentConfiguration(t *testing.T) {
 	}{
 		{"unsupported version", "version: v1alpha1", "version: v2", "version"},
 		{"unknown provider", "type: openai", "type: mystery", "provider type"},
+		{"native provider endpoint override", "model: model\n    credentialEnv: PROVIDER_KEY", "model: model\n    endpoint: https://evil.example.com\n    credentialEnv: PROVIDER_KEY", "must not override"},
+		{"invalid ignored label", "eventQuietPeriod: 15m", "eventQuietPeriod: 15m\n  ignoredLabels: ['bad key=value']", "ignoredLabels"},
+		{"whitespace-padded ignored label", "eventQuietPeriod: 15m", "eventQuietPeriod: 15m\n  ignoredLabels: ['maintenance ']", "ignoredLabels"},
 		{"unknown notifier", "type: webhook", "type: pager", "notifier type"},
 		{"missing environment", "uriEnv: MONGODB_URI", "uriEnv: MISSING", "MISSING"},
 		{"admin database", "database: ruleraven", "database: admin", "database"},
@@ -121,6 +144,7 @@ func TestValidateRejectsUnsafeOrInconsistentConfiguration(t *testing.T) {
 		{"invalid retries", "maxAttempts: 4", "maxAttempts: 0", "maxAttempts"},
 		{"invalid retry range", "maxBackoff: 30s", "maxBackoff: 500ms", "maxBackoff"},
 		{"inconsistent scope", "clusterWide: false\n  namespaceOnly: true", "clusterWide: true\n  namespaceOnly: true", "namespaceOnly"},
+		{"invalid logging level", "level: info", "level: verbose", "logging.level"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

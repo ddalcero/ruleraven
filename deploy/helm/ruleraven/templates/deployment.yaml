@@ -8,11 +8,9 @@ metadata:
 spec:
   replicas: {{ .Values.replicaCount }}
   revisionHistoryLimit: 3
+  # Leader election is not implemented yet; Recreate prevents overlapping controllers during upgrades.
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 1
+    type: Recreate
   selector:
     matchLabels:
       {{- include "ruleraven.selectorLabels" . | nindent 6 }}

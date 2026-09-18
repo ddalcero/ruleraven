@@ -1,0 +1,46 @@
+version: v1alpha1
+cluster:
+  id: example-cluster
+  clusterWide: false
+  namespaceOnly: true
+  watchNamespaces: [default]
+  resources: [pods, events, deployments, statefulsets, daemonsets, jobs]
+controller:
+  reconcileTimeout: 30s
+  maxNormalizedStateBytes: 65536
+mongo:
+  uriEnv: MONGODB_URI
+  database: ruleraven
+  timeout: 10s
+rules:
+  crashLoopRestartThreshold: 3
+  crashLoopCriticalThreshold: 10
+  minimumAge: 5m
+  eventQuietPeriod: 15m
+decision:
+  primary:
+    type: openai
+    model: configured-model
+    credentialEnv: PROVIDER_KEY
+  fallback:
+    type: anthropic
+    model: configured-fallback-model
+    credentialEnv: FALLBACK_KEY
+  timeout: 20s
+notifications:
+  destinations:
+    - id: operations
+      type: webhook
+      url: https://example.invalid/ruleraven
+      credentialEnv: WEBHOOK_SECRET
+  retry:
+    maxAttempts: 4
+    initialBackoff: 1s
+    maxBackoff: 30s
+http:
+  address: :8080
+  readTimeout: 5s
+  writeTimeout: 5s
+  idleTimeout: 30s
+logging:
+  level: info

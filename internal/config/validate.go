@@ -74,6 +74,8 @@ func Validate(cfg Config, options Options) error {
 			return fmt.Errorf("duplicate destination id %q", destination.ID)
 		}
 		seen[destination.ID] = struct{}{}
+	}
+	for _, destination := range cfg.Notifications.Destinations {
 		if _, ok := options.NotifierTypes[destination.Type]; !ok {
 			return fmt.Errorf("notifier type %q is not registered", destination.Type)
 		}
@@ -89,6 +91,15 @@ func Validate(cfg Config, options Options) error {
 		}
 		if err := requireEnvironment(destination.CredentialEnv, "destination credentialEnv", options); err != nil {
 			return err
+		}
+		if destination.Timeout.Duration <= 0 {
+			return fmt.Errorf("destination timeout must be positive")
+		}
+		if destination.MaxResponseBytes <= 0 {
+			return fmt.Errorf("destination maxResponseBytes must be positive")
+		}
+		if destination.MaxRetryAfter.Duration <= 0 {
+			return fmt.Errorf("destination maxRetryAfter must be positive")
 		}
 	}
 	if cfg.Notifications.Retry.MaxAttempts <= 0 {

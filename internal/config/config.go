@@ -86,11 +86,14 @@ type NotificationsConfig struct {
 }
 
 type DestinationConfig struct {
-	ID                string `yaml:"id"`
-	Type              string `yaml:"type"`
-	URL               string `yaml:"url"`
-	CredentialEnv     string `yaml:"credentialEnv"`
-	AllowInsecureHTTP bool   `yaml:"allowInsecureHTTP"`
+	ID                string   `yaml:"id"`
+	Type              string   `yaml:"type"`
+	URL               string   `yaml:"url"`
+	CredentialEnv     string   `yaml:"credentialEnv"`
+	AllowInsecureHTTP bool     `yaml:"allowInsecureHTTP"`
+	Timeout           Duration `yaml:"timeout"`
+	MaxResponseBytes  int64    `yaml:"maxResponseBytes"`
+	MaxRetryAfter     Duration `yaml:"maxRetryAfter"`
 }
 
 type RetryConfig struct {

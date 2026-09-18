@@ -45,6 +45,9 @@ notifications:
       type: webhook
       url: https://example.invalid/hook
       credentialEnv: WEBHOOK_SECRET
+      timeout: 5s
+      maxResponseBytes: 4096
+      maxRetryAfter: 1m
   retry:
     maxAttempts: 4
     initialBackoff: 1s
@@ -108,6 +111,10 @@ func TestValidateRejectsUnsafeOrInconsistentConfiguration(t *testing.T) {
 		{"watches secrets", "resources: [pods, events, deployments, statefulsets, daemonsets, jobs]", "resources: [pods, secrets]", "Secret"},
 		{"duplicate destination", "    - id: operations\n      type: webhook", "    - id: operations\n      type: webhook\n      url: https://example.invalid/other\n      credentialEnv: WEBHOOK_SECRET\n    - id: operations\n      type: webhook", "duplicate destination"},
 		{"insecure webhook", "url: https://example.invalid/hook", "url: http://example.invalid/hook", "allowInsecureHTTP"},
+		{"zero webhook timeout", "timeout: 5s", "timeout: 0s", "destination timeout"},
+		{"zero webhook response limit", "maxResponseBytes: 4096", "maxResponseBytes: 0", "maxResponseBytes"},
+		{"zero webhook retry after", "maxRetryAfter: 1m", "maxRetryAfter: 0s", "maxRetryAfter"},
+		{"negative webhook retry after", "maxRetryAfter: 1m", "maxRetryAfter: -1s", "maxRetryAfter"},
 		{"same fallback", "type: anthropic", "type: openai", "fallback"},
 		{"zero timeout", "reconcileTimeout: 30s", "reconcileTimeout: 0s", "reconcileTimeout"},
 		{"zero state limit", "maxNormalizedStateBytes: 65536", "maxNormalizedStateBytes: 0", "maxNormalizedStateBytes"},

@@ -33,6 +33,9 @@ notifications:
       type: webhook
       url: https://example.invalid/ruleraven
       credentialEnv: WEBHOOK_SECRET
+      timeout: 5s
+      maxResponseBytes: 4096
+      maxRetryAfter: 1m
   retry:
     maxAttempts: 4
     initialBackoff: 1s

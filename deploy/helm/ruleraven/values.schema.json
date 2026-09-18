@@ -1,0 +1,582 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "replicaCount": {
+      "type": "integer"
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {}
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "automount": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "clusterWide": {
+          "type": "boolean"
+        },
+        "emitEvents": {
+          "type": "boolean"
+        }
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "watchNamespaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workers": {
+          "type": "integer"
+        },
+        "reconcileTimeout": {
+          "type": "string"
+        },
+        "maxNormalizedStateBytes": {
+          "type": "integer"
+        }
+      }
+    },
+    "mongo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "database": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "existingSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "webhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "allowInsecureHTTP": {
+              "type": "boolean"
+            },
+            "timeout": {
+              "type": "string"
+            },
+            "maxResponseBytes": {
+              "type": "integer"
+            },
+            "maxRetryAfter": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxAttempts": {
+              "type": "integer"
+            },
+            "initialBackoff": {
+              "type": "string"
+            },
+            "maxBackoff": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "crashLoopRestartThreshold": {
+          "type": "integer"
+        },
+        "crashLoopCriticalThreshold": {
+          "type": "integer"
+        },
+        "minimumAge": {
+          "type": "string"
+        },
+        "eventQuietPeriod": {
+          "type": "string"
+        },
+        "ignoredNamespaces": {
+          "type": "array",
+          "items": {}
+        },
+        "ignoredLabels": {
+          "type": "array",
+          "items": {}
+        }
+      }
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer"
+        },
+        "readTimeout": {
+          "type": "string"
+        },
+        "writeTimeout": {
+          "type": "string"
+        },
+        "idleTimeout": {
+          "type": "string"
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string"
+        }
+      }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "podLabels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsNonRoot": {
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "type": "integer"
+        },
+        "runAsGroup": {
+          "type": "integer"
+        },
+        "fsGroup": {
+          "type": "integer"
+        },
+        "seccompProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "securityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "type": "boolean"
+        },
+        "readOnlyRootFilesystem": {
+          "type": "boolean"
+        },
+        "runAsNonRoot": {
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "type": "integer"
+        },
+        "runAsGroup": {
+          "type": "integer"
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "drop": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "type": "string"
+            },
+            "memory": {
+              "type": "string"
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "type": "string"
+            },
+            "memory": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "liveness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "initialDelaySeconds": {
+              "type": "integer"
+            },
+            "periodSeconds": {
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "type": "integer"
+            },
+            "failureThreshold": {
+              "type": "integer"
+            }
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "initialDelaySeconds": {
+              "type": "integer"
+            },
+            "periodSeconds": {
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "type": "integer"
+            },
+            "failureThreshold": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer"
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {}
+    },
+    "affinity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "topologySpreadConstraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxSkew": {
+            "type": "integer"
+          },
+          "topologyKey": {
+            "type": "string"
+          },
+          "whenUnsatisfiable": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prometheus.io/scrape": {
+              "type": "string"
+            },
+            "prometheus.io/path": {
+              "type": "string"
+            },
+            "prometheus.io/port": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "egressPorts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "protocol": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RuleRaven Helm values"
+}

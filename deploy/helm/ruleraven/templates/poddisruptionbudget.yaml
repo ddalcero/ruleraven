@@ -1,0 +1,14 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ruleraven.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ruleraven.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ruleraven.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,39 @@
+{{- if .Values.tests.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "ruleraven.fullname" . }}-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ruleraven.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: healthz
+      image: {{ printf "%s:%s" .Values.tests.image.repository .Values.tests.image.tag | quote }}
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command: ["wget"]
+      args: ["-qO-", "http://{{ include "ruleraven.fullname" . }}:{{ .Values.service.port }}/healthz"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 5m
+          memory: 8Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+{{- end }}

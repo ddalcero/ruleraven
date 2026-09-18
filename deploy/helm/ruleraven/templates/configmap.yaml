@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ruleraven.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ruleraven.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    version: v1alpha1
+    cluster:
+      id: {{ .Values.cluster.id | quote }}
+      clusterWide: {{ .Values.rbac.clusterWide }}
+      namespaceOnly: {{ not .Values.rbac.clusterWide }}
+      watchNamespaces:{{ if .Values.rbac.clusterWide }} []{{ else }}
+        {{- toYaml .Values.cluster.watchNamespaces | nindent 8 }}{{ end }}
+      resources: [pods, events, deployments, statefulsets, daemonsets, jobs]
+    controller:
+      workers: {{ .Values.controller.workers }}
+      reconcileTimeout: {{ .Values.controller.reconcileTimeout | quote }}
+      maxNormalizedStateBytes: {{ .Values.controller.maxNormalizedStateBytes }}
+    mongo:
+      uriEnv: MONGODB_URI
+      database: {{ .Values.mongo.database | quote }}
+      timeout: {{ .Values.mongo.timeout | quote }}
+    rules:
+      crashLoopRestartThreshold: {{ .Values.rules.crashLoopRestartThreshold }}
+      crashLoopCriticalThreshold: {{ .Values.rules.crashLoopCriticalThreshold }}
+      minimumAge: {{ .Values.rules.minimumAge | quote }}
+      eventQuietPeriod: {{ .Values.rules.eventQuietPeriod | quote }}
+      ignoredNamespaces: {{ toJson .Values.rules.ignoredNamespaces }}
+      ignoredLabels: {{ toJson .Values.rules.ignoredLabels }}
+    decision:
+      primary:
+        type: {{ .Values.decision.primary.type | quote }}
+        model: {{ .Values.decision.primary.model | quote }}
+        credentialEnv: PROVIDER_KEY
+      {{- if .Values.decision.fallback.enabled }}
+      fallback:
+        type: {{ .Values.decision.fallback.type | quote }}
+        model: {{ .Values.decision.fallback.model | quote }}
+        credentialEnv: FALLBACK_PROVIDER_KEY
+      {{- end }}
+      timeout: {{ .Values.decision.timeout | quote }}
+    notifications:
+      destinations:{{ if .Values.notifications.webhook.enabled }}
+        - id: {{ .Values.notifications.webhook.id | quote }}
+          type: webhook
+          url: {{ .Values.notifications.webhook.url | quote }}
+          credentialEnv: WEBHOOK_SECRET
+          allowInsecureHTTP: {{ .Values.notifications.webhook.allowInsecureHTTP }}
+          timeout: {{ .Values.notifications.webhook.timeout | quote }}
+          maxResponseBytes: {{ .Values.notifications.webhook.maxResponseBytes }}
+          maxRetryAfter: {{ .Values.notifications.webhook.maxRetryAfter | quote }}{{ else }} []{{ end }}
+      retry:
+        maxAttempts: {{ .Values.notifications.retry.maxAttempts }}
+        initialBackoff: {{ .Values.notifications.retry.initialBackoff | quote }}
+        maxBackoff: {{ .Values.notifications.retry.maxBackoff | quote }}
+    http:
+      address: {{ printf ":%v" .Values.http.port | quote }}
+      readTimeout: {{ .Values.http.readTimeout | quote }}
+      writeTimeout: {{ .Values.http.writeTimeout | quote }}
+      idleTimeout: {{ .Values.http.idleTimeout | quote }}
+    logging:
+      level: {{ .Values.logging.level | quote }}

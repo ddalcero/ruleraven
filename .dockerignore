@@ -1,0 +1,9 @@
+.git
+.github
+.hermes
+coverage.out
+ruleraven
+smoke-webhook
+deploy/helm
+**/*_test.go
+test

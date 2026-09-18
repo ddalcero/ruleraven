@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ruleraven.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ruleraven.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "ruleraven.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "ruleraven.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "ruleraven.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ruleraven
+          image: {{ include "ruleraven.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/ruleraven/config.yaml"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.http.port }}
+              protocol: TCP
+          env:
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mongo.existingSecret.name }}
+                  key: {{ .Values.mongo.existingSecret.key }}
+            - name: PROVIDER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.decision.primary.existingSecret.name }}
+                  key: {{ .Values.decision.primary.existingSecret.key }}
+            {{- if .Values.decision.fallback.enabled }}
+            - name: FALLBACK_PROVIDER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.decision.fallback.existingSecret.name }}
+                  key: {{ .Values.decision.fallback.existingSecret.key }}
+            {{- end }}
+            {{- if .Values.notifications.webhook.enabled }}
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.notifications.webhook.existingSecret.name }}
+                  key: {{ .Values.notifications.webhook.existingSecret.key }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ruleraven
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ruleraven.fullname" . }}
+            defaultMode: 0440
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- range . }}
+        - maxSkew: {{ .maxSkew }}
+          topologyKey: {{ .topologyKey }}
+          whenUnsatisfiable: {{ .whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "ruleraven.selectorLabels" $ | nindent 14 }}
+        {{- end }}
+      {{- end }}

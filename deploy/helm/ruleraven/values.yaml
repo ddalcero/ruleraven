@@ -1,0 +1,170 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/ddalcero/ruleraven
+  pullPolicy: IfNotPresent
+  tag: ""
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+rbac:
+  create: true
+  clusterWide: false
+  emitEvents: false
+
+cluster:
+  id: ruleraven-test
+  watchNamespaces:
+    - default
+
+controller:
+  workers: 2
+  reconcileTimeout: 30s
+  maxNormalizedStateBytes: 65536
+
+mongo:
+  database: ruleraven
+  timeout: 10s
+  existingSecret:
+    name: ruleraven-credentials
+    key: mongodb-uri
+
+decision:
+  timeout: 20s
+  primary:
+    type: openrouter
+    model: typesafe/jev-1.13
+    existingSecret:
+      name: ruleraven-credentials
+      key: openrouter-api-key
+  fallback:
+    enabled: false
+    type: anthropic
+    model: claude-3-5-haiku-latest
+    existingSecret:
+      name: ruleraven-credentials
+      key: anthropic-api-key
+
+notifications:
+  webhook:
+    enabled: false
+    id: operations
+    url: https://example.invalid/ruleraven
+    allowInsecureHTTP: false
+    timeout: 5s
+    maxResponseBytes: 4096
+    maxRetryAfter: 1m
+    existingSecret:
+      name: ruleraven-credentials
+      key: webhook-secret
+  retry:
+    maxAttempts: 4
+    initialBackoff: 1s
+    maxBackoff: 30s
+
+rules:
+  crashLoopRestartThreshold: 3
+  crashLoopCriticalThreshold: 10
+  minimumAge: 5m
+  eventQuietPeriod: 15m
+  ignoredNamespaces: []
+  ignoredLabels: []
+
+http:
+  port: 8080
+  readTimeout: 5s
+  writeTimeout: 5s
+  idleTimeout: 30s
+
+logging:
+  level: info
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+probes:
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 6
+
+terminationGracePeriodSeconds: 30
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8080"
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+networkPolicy:
+  enabled: false
+  # Kubernetes NetworkPolicy cannot restrict egress by DNS hostname. When enabled,
+  # these ports remain open to all destinations for provider, MongoDB, and webhook traffic.
+  egressPorts:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 27017
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+tests:
+  enabled: true
+  image:
+    repository: busybox
+    tag: 1.36.1
+    pullPolicy: IfNotPresent

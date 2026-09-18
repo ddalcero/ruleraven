@@ -1,35 +1,46 @@
 # RuleRaven
 
-> **Alpha — under active development.** RuleRaven is currently a design and
-> planning project. The controller, container image, Helm chart, and commands
-> described as "planned" below do not exist yet and must not be used in
-> production.
+> **Alpha — under active development.** RuleRaven has a working controller,
+> container build, and Helm chart, but no stable release or production-support
+> guarantee. Configuration, schemas, and behavior may change without notice.
 
-RuleRaven is a planned, vigilant Kubernetes incident triage controller. It is
-intended to turn noisy resource state and Kubernetes Events into stable,
-explainable incident decisions without changing workloads.
+RuleRaven is a read-only Kubernetes incident triage controller. It turns a
+bounded set of workload state and Kubernetes Events into stable, explainable
+incident decisions without changing workloads.
 
-## The problem
+## What works in Alpha
 
-Kubernetes exposes useful failure signals, but operators must correlate Events,
-conditions, owner relationships, and repeated reconciliations before deciding
-whether a situation is actionable. Sending every signal directly to a person or
-model creates duplicate alerts, leaks unnecessary cluster data, and makes
-outcomes difficult to audit.
+The current implementation:
 
-RuleRaven is being designed to:
+- watches Pods, Events, Deployments, StatefulSets, DaemonSets, and Jobs;
+- normalizes and redacts observations into bounded snapshots with stable
+  fingerprints;
+- evaluates crash loops, scheduling failures, image-pull failures, failed Jobs,
+  unavailable workloads, Warning Events, and recovery with deterministic rules;
+- calls a configured decision provider only for ambiguous cases;
+- validates provider output before a deterministic composer assigns severity and
+  action;
+- stores incidents, immutable snapshots, evaluations, and delivery work in
+  MongoDB with transactional outbox semantics;
+- sends at-least-once, HMAC-signed, CloudEvents-style webhook notifications;
+- exposes `/healthz`, `/readyz`, and Prometheus-format `/metrics`; and
+- ships a non-root distroless image build and a least-privilege Helm chart.
 
-- watch a deliberately small set of Kubernetes resources and Events;
-- normalize and redact observations into bounded incident snapshots;
-- resolve clear cases with deterministic, versioned rules;
-- ask one configured decision provider only when a case is ambiguous;
-- persist incidents, evaluations, and notification work atomically; and
-- deliver versioned notifications that downstream systems can deduplicate.
+The provider implementations cover direct TypeSafe/Jev, OpenRouter Decisions,
+OpenAI structured output, Anthropic forced-tool output, and a strict generic
+OpenAI-compatible adapter. The production `v1alpha1` configuration currently
+registers `typesafe`, `openrouter`, `openai`, and `anthropic`; custom endpoint and
+strict-mode settings for the generic adapter are not exposed by the chart yet.
 
-## Planned architecture
+An Alpha EKS smoke deployment has exercised health and readiness, metrics, a
+live Jev decision, MongoDB indexes and transactions, outbox dispatch, and a
+signed generic webhook. That smoke test is evidence of integration, not a
+production-readiness claim.
+
+## Architecture
 
 ```text
-Kubernetes API (read-only watches)
+Kubernetes API (allowlisted read-only watches)
               |
               v
       normalizer + redactor
@@ -47,7 +58,7 @@ Kubernetes API (read-only watches)
           |              |
           +-------+------+
                   v
-       policy / decision composer
+       deterministic decision composer
                   |
                   v
  MongoDB transaction: incident + evaluation + outbox
@@ -56,178 +67,148 @@ Kubernetes API (read-only watches)
           outbox dispatcher
                   |
                   v
- optional compile-time notifier plugins
+       signed generic HTTPS webhook
 ```
 
-The implementation is planned in Go using
-[controller-runtime](https://github.com/kubernetes-sigs/controller-runtime).
-Event handlers will enqueue resource keys; provider and database calls will run
-outside informer callbacks. Leader election will allow multiple replicas while
-one Lease holder runs watches and workers.
-
-The initial resource scope is planned to include Pods, Events, Deployments,
-StatefulSets, DaemonSets, and Jobs. Initial deterministic rules will cover
-crash loops, unschedulable Pods, failed Jobs, unavailable workloads, image-pull
-failures, recovery, and selected ambiguous Warning Events.
-
-See the [MVP implementation plan](docs/plans/2026-09-18-ruleraven-mvp.md) for
-the intended package layout, TDD sequence, and acceptance criteria.
+Informer handlers enqueue resource keys; provider and database work runs in
+workers. Reconciliation is idempotent, and stable event IDs let webhook
+consumers deduplicate at-least-once delivery. Startup readiness requires valid
+configuration, verified MongoDB indexes, and synchronized Kubernetes informers.
 
 ## Safety boundaries
 
-Safety is an architectural constraint, not a provider prompt.
+Safety is enforced in configuration, normalization, RBAC, and adapters rather
+than delegated to a model prompt.
 
-- **No automatic remediation.** RuleRaven may recommend an action but will not
-  patch, delete, restart, scale, or execute commands in workloads.
-- **Read-only workload access.** Planned Kubernetes permissions are `get`,
-  `list`, and `watch` for explicitly supported resources.
-- **Narrow writes.** Kubernetes writes are limited to leader-election Leases
-  and, only when explicitly enabled, Kubernetes Events.
-- **No Secret watches.** Configuration that attempts to watch Secrets will be
-  rejected. The default RBAC will not permit Secret reads, pod execution, or
-  workload mutation.
-- **Allowlist normalization.** Snapshots will contain selected operational
-  fields rather than complete Kubernetes objects. Managed fields, arbitrary
-  annotations, environment values, command arguments, and Secret data are out
-  of scope.
-- **Deterministic authority.** A provider may escalate an ambiguous result but
-  will not be allowed to downgrade a deterministic critical decision.
-- **Bounded external calls.** Provider and webhook clients will enforce
-  deadlines, response-size limits, retry classification, and redacted logs.
-- **No exactly-once claim.** Notification delivery is planned as at-least-once;
-  consumers must deduplicate by event ID.
+- **No automatic remediation.** RuleRaven does not patch, delete, restart,
+  scale, or execute commands in workloads.
+- **Read-only workload access.** Chart RBAC grants `get`, `list`, and `watch`
+  only for supported resources. Optional Event emission adds only `create` and
+  `patch` on Events.
+- **No Secret watches.** Configuration rejects Secret resources. The chart does
+  not grant Secret reads, pod logs, `pods/exec`, node, or wildcard access.
+- **Allowlist normalization.** Snapshots contain selected operational fields,
+  not complete Kubernetes objects, arbitrary annotations, environment values,
+  command arguments, or Secret data.
+- **Deterministic authority.** Provider evidence cannot downgrade a
+  deterministic critical result.
+- **Bounded external calls.** Provider and webhook clients enforce timeouts,
+  response limits, retry classification, redacted logs, and redirect controls.
+- **At-least-once notifications.** Consumers must verify signatures, enforce a
+  timestamp window, and deduplicate by event ID.
 
-## Provider-neutral decisions
+## Quick start
 
-RuleRaven will define a small internal decision interface based on typed
-questions and answers. Providers return evidence — such as a choice, score, or
-probability — rather than the final operational decision. A deterministic,
-versioned composer will map validated answers and rule results to severity and
-action.
+### Developer checks
 
-Planned adapters are:
-
-- TypeSafe direct Jev;
-- OpenRouter Decisions/Jev;
-- OpenAI structured outputs;
-- Anthropic forced tool use; and
-- generic OpenAI-compatible endpoints using strict JSON Schema or forced-tool
-  mode.
-
-One primary provider and, optionally, one ordered fallback will be configured.
-Provider calls will be skipped for terminal deterministic rules. Raw prompts and
-raw provider responses will not be stored by default. Live provider tests will
-be opt-in and will not be required for ordinary pull requests.
-
-## MongoDB Atlas
-
-The planned persistence layer uses a **new, explicitly named MongoDB Atlas
-database** for each deployment or cluster. RuleRaven will never rely on an
-implicit database from the connection URI, and it will reject the administrative
-names `admin`, `local`, and `config`.
-
-Planned collections are:
-
-- `incidents` — current lifecycle and latest decision references;
-- `snapshots` — immutable, normalized observations;
-- `evaluations` — deterministic and provider audit records; and
-- `notification_outbox` — leased, retryable delivery work.
-
-Unique keys will make repeated reconciliations idempotent. A MongoDB transaction
-will commit an incident transition, evaluation, and outbox entries together.
-TTL indexes will bound retention, and startup index verification will block
-readiness when idempotency constraints are uncertain. Integration tests will use
-a replica set so transaction behavior is exercised rather than mocked.
-
-## Optional integrations
-
-Notifications are planned as **optional, compile-time Go plugins**, not runtime
-`.so` modules. The first notifier will be a generic HTTPS webhook with a
-versioned CloudEvents-style envelope and an HMAC-SHA256 signature over the exact
-request body.
-
-Hermes/Bastion is only an external webhook consumer. RuleRaven will contain no
-Hermes-specific triage logic, credentials, or control path. Other notifiers can
-be added behind the same factory and contract-test boundaries without changing
-incident policy.
-
-## Planned quick start
-
-> These commands describe the target developer experience. They are not
-> expected to work until the corresponding MVP milestones are implemented.
-
-Prerequisites are expected to be Go, Docker, kubectl, Helm, Kind, and access to
-a dedicated MongoDB Atlas test database (or a local replica set for tests).
+Prerequisites are Go 1.22.2 or a compatible Go 1.22 toolchain, Docker, Helm 3,
+Python 3 with PyYAML for chart assertions, and Node.js for Markdown linting.
 
 ```bash
 git clone https://github.com/ddalcero/ruleraven.git
 cd ruleraven
-cp config/example.yaml config/local.yaml
-export MONGODB_URI='mongodb+srv://...'
-# Export exactly one configured provider credential and optional webhook values.
-make test
-make kind-up
-make e2e
+go mod download
+make check
+make integration
+make helm-test
+make docker-build
 ```
 
-The planned cluster installation flow is:
+`make integration` starts a disposable MongoDB 7 single-node replica set with
+Testcontainers. It requires a working Docker daemon and never needs an Atlas
+credential.
+
+### Run from source
+
+Copy the example, select a provider, and set only environment-variable
+references in YAML. Never place credentials or a MongoDB URI in the config
+file.
 
 ```bash
+cp config/example.yaml config/local.yaml
+export MONGODB_URI='mongodb://localhost:27017/?replicaSet=rs0'
+export PROVIDER_KEY='<provider-api-key>'
+export FALLBACK_KEY='<fallback-api-key>'
+export WEBHOOK_SECRET='<random-shared-secret>'
+export KUBECONFIG="$HOME/.kube/config"
+go run ./cmd/ruleraven --config config/local.yaml
+```
+
+The example enables a webhook and fallback provider. Remove those sections if
+not needed. MongoDB must support transactions; a standalone `mongod` is not
+sufficient.
+
+### Install the chart
+
+Create the referenced Kubernetes Secret separately, keep secrets out of values
+files, and start with one namespace and one replica. Then install an immutable
+Alpha image tag:
+
+```bash
+helm lint --strict deploy/helm/ruleraven
 helm upgrade --install ruleraven deploy/helm/ruleraven \
   --namespace ruleraven-system \
   --create-namespace \
-  --values config/your-values.yaml
+  --values /path/to/non-secret-values.yaml \
+  --set-string image.tag='<immutable-alpha-tag>'
 ```
 
-Until the chart and release process exist, do not copy these commands into an
-operations runbook. Track executable setup instructions in the roadmap and
-release notes.
+Follow the
+[test deployment runbook](docs/operations/test-deployment.md) for Secret keys,
+provider choices, RBAC checks, Atlas requirements, verification, and cleanup.
+
+## Known limitations
+
+- RuleRaven remains Alpha. There is no stable API/configuration contract,
+  compatibility promise, signed release image, SBOM, or production support.
+- Automatic remediation is intentionally absent; output is advisory and
+  notification-only.
+- Leader election is not implemented. The chart defaults to one replica; do not
+  scale it above one until active/standby coordination exists.
+- MongoDB transactions require a replica set. The current live smoke uses an
+  ephemeral, single-node in-cluster replica set because the available Atlas API
+  keys and database users could not provision the isolated Atlas test database.
+- Atlas provisioning is external to RuleRaven and requires appropriate Atlas
+  project permissions plus a database user authorized for the explicitly named
+  RuleRaven database.
+- Cluster admission or external webhook authorizers can grant a service account
+  more effective access than the chart's RBAC. Verify effective permissions in
+  every target cluster instead of treating rendered RBAC as the whole policy.
+- A quick Cloudflare tunnel can be useful for a short webhook smoke test, but it
+  is temporary test infrastructure and is not a supported deployment endpoint.
+- The generic OpenAI-compatible adapter exists and is contract-tested, but its
+  endpoint and strict mode are not configurable through the current production
+  config or Helm values.
+
+## Collaboration
+
+RuleRaven welcomes focused issues and pull requests for reproducible failures,
+safety improvements, provider/notifier adapters, rules, tests, and operations
+documentation. Please:
+
+1. search existing issues and pull requests;
+2. describe the failure mode, expected result, and safety or data impact;
+3. keep changes narrow and add regression or contract tests;
+4. run the checks in [CONTRIBUTING.md](CONTRIBUTING.md); and
+5. avoid real cluster data, URLs, account names, credentials, and provider
+   payloads in issues, fixtures, logs, and commits.
+
+Use GitHub private vulnerability reporting for security issues as described in
+[SECURITY.md](SECURITY.md). Community participation follows the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project status
 
-**Alpha / under active development.** The repository currently establishes the
-architecture, contribution policy, security policy, and implementation plan.
-There is no production code, released binary, container image, supported Helm
-chart, compatibility guarantee, or stable configuration/API contract yet.
+**Alpha / working prototype.** The repository contains the controller,
+provider-neutral decision contracts, provider adapters, MongoDB transactional
+persistence, signed webhooks, telemetry, Docker packaging, Helm deployment, and
+unit, contract, integration, and chart tests. The next work is hardening,
+leader election, broader deployment testing, release provenance, and a stable
+configuration/release policy.
 
-Early contributors should expect package names, schemas, configuration, and
-interfaces to change. Design discussion and test-first implementation pull
-requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Roadmap
-
-### Foundation
-
-- [ ] Bootstrap the Go module, health server, configuration, and CI.
-- [ ] Define domain types, canonical snapshots, redaction, and fingerprints.
-- [ ] Add deterministic rules with threshold and recovery tests.
-
-### Decisions and persistence
-
-- [ ] Implement the universal typed-question contract and decision composer.
-- [ ] Add provider adapters and shared contract tests.
-- [ ] Implement Atlas persistence, transactions, indexes, and outbox leasing.
-
-### Delivery and control plane
-
-- [ ] Add the signed generic webhook and dispatcher.
-- [ ] Build the controller pipeline, resolution sweeper, telemetry, and probes.
-- [ ] Add a hardened container image and least-privilege Helm chart.
-
-### Verification and release
-
-- [ ] Exercise the system end to end with Kind, a Mongo replica set, provider
-      stub, and webhook receiver.
-- [ ] Prove RBAC denials, idempotency, failover, and redaction.
-- [ ] Publish signed multi-architecture images, an SBOM, provenance, and a Helm
-      chart only after all MVP acceptance criteria pass.
-
-## Contributing and security
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Community
-participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Report
-security issues privately as described in [SECURITY.md](SECURITY.md); do not
-open a public issue for a suspected vulnerability.
+See [CHANGELOG.md](CHANGELOG.md) for notable changes and the
+[MVP implementation plan](docs/plans/2026-09-18-ruleraven-mvp.md) for design
+history. The plan is historical context where it conflicts with working code.
 
 ## License
 

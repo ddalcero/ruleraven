@@ -1,8 +1,8 @@
 # Contributing to RuleRaven
 
-> **Project state:** Alpha / under active development. The repository does not
-> yet contain a working controller. Commands and package paths marked as
-> "planned" become authoritative only when their implementation lands.
+> **Project state:** Alpha / under active development. The controller, image,
+> Helm chart, and tests work, but interfaces and configuration may change and
+> no release is production-supported.
 
 Thank you for helping build RuleRaven. Changes should preserve its core promise:
 explainable Kubernetes incident triage with no automatic remediation and the
@@ -22,39 +22,34 @@ least cluster access necessary.
 
 ## Local setup
 
-The initial documentation baseline has no Go module or executable yet. For
-current documentation-only work, clone the repository and use any available
-Markdown checker:
+Clone the repository and install the prerequisites used by the relevant checks:
+
+- Go 1.22.2 or a compatible Go 1.22 toolchain;
+- Docker for MongoDB integration tests and image builds;
+- Helm 3 plus Python 3 and PyYAML for chart assertions;
+- Node.js for the pinned Markdown linter; and
+- Git.
 
 ```bash
 git clone https://github.com/ddalcero/ruleraven.git
 cd ruleraven
-npx --yes markdownlint-cli2 '**/*.md'
+go mod download
+make check
 ```
 
-Once the foundation milestone lands, the planned prerequisites are:
-
-- the Go version pinned in `go.mod` and CI;
-- Docker with the Compose/Testcontainers requirements supported;
-- kubectl, Helm, and Kind for end-to-end work; and
-- Git.
-
-The planned setup and verification commands are:
+Run the checks that require Docker and Helm separately:
 
 ```bash
-go mod download
-make test
-make lint
+make integration
+make helm-test
+make docker-build
 ```
 
-Mongo integration tests will create a local single-node replica set through
-Testcontainers. They must not use a contributor's production Atlas database.
-Live provider and Atlas smoke tests will be opt-in and skipped unless their
-explicit environment variables are present.
-
-When these targets are introduced, `make help` and CI are the source of truth.
-Do not add a documented command without adding it to the repository and
-exercising it in CI.
+`make integration` creates a disposable MongoDB single-node replica set through
+Testcontainers. It must not use a contributor's Atlas database. Live provider,
+cluster, and Atlas smoke tests are opt-in and are not part of ordinary pull
+requests. Do not add a documented command without adding it to the repository
+and exercising it in CI where practical.
 
 ## Test-driven development
 
@@ -68,13 +63,15 @@ Production behavior follows **RED → GREEN → REFACTOR**:
 6. Run the full unit suite and the relevant integration or contract suite.
 7. Commit a coherent, passing change.
 
-For Go work, the target command sequence is:
+For Go work, the command sequence is:
 
 ```bash
 go test -count=1 ./internal/package/...
-go test -count=1 ./...
-go test -race -count=1 ./...
-go vet ./...
+make fmt-check
+make test
+make test-race
+make vet
+make integration
 ```
 
 Tests must be deterministic:
@@ -128,11 +125,12 @@ explicitly revises them:
 
 ## Adding a decision provider
 
-Provider adapters are planned under `internal/provider/<name>/` and implement
-the common `provider.Provider` interface. When this package exists:
+Provider adapters live under `internal/provider/<name>/` and implement the
+common `provider.Provider` interface:
 
 1. Add the adapter without changing the domain decision model.
-2. Register an explicit provider type in `internal/provider/registry.go`.
+2. Register an explicit provider type in `app.NewProviderRegistry` and cover
+   registry construction with a test.
 3. Add strict configuration validation and environment-variable references;
    never accept credentials in the YAML body.
 4. Translate the universal Noul, Choice, and Score questions into the provider's
@@ -153,10 +151,11 @@ should be avoided when a small, auditable HTTP client is sufficient.
 
 ## Adding a notifier
 
-Notifier adapters are planned under `internal/notify/<name>/` and implement the
-common notifier and factory interfaces. When those packages exist:
+Notifier adapters live under `internal/notify/<name>/` and implement the common
+notifier and factory interfaces:
 
-1. Add a compile-time factory and register a stable notifier type.
+1. Add a compile-time factory, register it in `app.NewNotifierRegistry`, and
+   use a stable notifier type.
 2. Parse notifier-specific configuration strictly and resolve secrets by
    environment-variable name.
 3. Keep incident policy out of the adapter; accept only the versioned message

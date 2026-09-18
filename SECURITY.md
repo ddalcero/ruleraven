@@ -2,10 +2,10 @@
 
 ## Project maturity
 
-RuleRaven is **Alpha / under active development**. There is currently no released
-or supported controller, container image, or Helm chart. Interfaces and data
-formats may change without notice. Nothing in this repository should currently
-be treated as production-ready.
+RuleRaven is **Alpha / under active development**. The repository contains a
+working controller, container build, and Helm chart, but no version is currently
+production-supported. Interfaces and data formats may change without notice,
+and Alpha artifacts must not be treated as production-ready.
 
 ## Supported versions
 
@@ -100,8 +100,9 @@ details have been removed.
 
 ## Dependency and release posture
 
-The planned release pipeline will run dependency and vulnerability checks,
-generate an SBOM, and sign images and provenance. These controls are roadmap
-items, not current capabilities. Until signed releases are published, do not
-assume that an image, chart, binary, or package claiming to be RuleRaven is an
-official project artifact.
+CI runs formatting, unit and contract tests, race tests, vet, Docker-backed
+MongoDB integration tests, Helm assertions, and an image build. Dependabot
+tracks Go modules, GitHub Actions, and Docker bases. Vulnerability scanning,
+SBOM generation, image signing, and provenance are still roadmap items. Until
+signed releases are published, do not assume that an image, chart, binary, or
+package claiming to be RuleRaven is an official project artifact.

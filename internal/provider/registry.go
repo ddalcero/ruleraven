@@ -15,8 +15,11 @@ var (
 )
 
 type FactoryConfig struct {
-	Endpoint         string
-	Model            string
+	Endpoint string
+	Model    string
+	// StrictMode selects an explicitly supported structured-output mechanism.
+	// It is required by generic compatible adapters and ignored by native ones.
+	StrictMode       string
 	Credential       string
 	HTTPClient       HTTPClient
 	Retry            RetryPolicy

@@ -1,0 +1,1 @@
+{"id":"msg-contract","type":"message","role":"assistant","model":"resolved-contract-model","stop_reason":"tool_use","content":[{"type":"tool_use","id":"tool-1","name":"submit_answers","input":{"answers":{"binary":{"type":"noul","noul":0.75}}}}],"usage":{"input_tokens":10,"output_tokens":5}}

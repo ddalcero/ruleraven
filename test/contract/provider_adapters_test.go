@@ -7,11 +7,14 @@ import (
 	"time"
 
 	"github.com/ddalcero/ruleraven/internal/provider"
+	"github.com/ddalcero/ruleraven/internal/provider/anthropic"
+	"github.com/ddalcero/ruleraven/internal/provider/openai"
+	"github.com/ddalcero/ruleraven/internal/provider/openaicompat"
 	"github.com/ddalcero/ruleraven/internal/provider/openrouter"
 	"github.com/ddalcero/ruleraven/internal/provider/typesafe"
 )
 
-func TestProviderContract_TypeSafeAndOpenRouter(t *testing.T) {
+func TestProviderContract_ConcreteAdapters(t *testing.T) {
 	request := contractRequest()
 	RunProviderContract(t, Suite{
 		Name: "typesafe",
@@ -26,6 +29,38 @@ func TestProviderContract_TypeSafeAndOpenRouter(t *testing.T) {
 			return openrouter.New(factoryConfig(config, "typesafe/jev-1.13"))
 		},
 		Request: request, Fixtures: providerFixtures(t, "openrouter"),
+	})
+	RunProviderContract(t, Suite{
+		Name: "openai",
+		Factory: func(config AdapterConfig) (provider.Provider, error) {
+			return openai.New(factoryConfig(config, "configured-openai"))
+		},
+		Request: request, Fixtures: providerFixtures(t, "openai"),
+	})
+	RunProviderContract(t, Suite{
+		Name: "anthropic",
+		Factory: func(config AdapterConfig) (provider.Provider, error) {
+			return anthropic.New(factoryConfig(config, "configured-anthropic"))
+		},
+		Request: request, Fixtures: providerFixtures(t, "anthropic"),
+	})
+	RunProviderContract(t, Suite{
+		Name: "openai-compatible-json-schema",
+		Factory: func(config AdapterConfig) (provider.Provider, error) {
+			factory := factoryConfig(config, "configured-compatible")
+			factory.StrictMode = openaicompat.ModeJSONSchema
+			return openaicompat.New(factory)
+		},
+		Request: request, Fixtures: providerFixtures(t, "openai"),
+	})
+	RunProviderContract(t, Suite{
+		Name: "openai-compatible-forced-tool",
+		Factory: func(config AdapterConfig) (provider.Provider, error) {
+			factory := factoryConfig(config, "configured-compatible")
+			factory.StrictMode = openaicompat.ModeForcedTool
+			return openaicompat.New(factory)
+		},
+		Request: request, Fixtures: providerFixtures(t, "openaicompat"),
 	})
 }
 

@@ -1,0 +1,1 @@
+{"id":"chatcmpl-contract","model":"resolved-contract-model","choices":[{"message":{"role":"assistant","content":"{\"answers\":{\"binary\":{\"type\":\"noul\",\"noul\":0.75}}}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5}}

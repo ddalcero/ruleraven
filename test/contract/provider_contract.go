@@ -177,9 +177,9 @@ func RunProviderContract(t *testing.T, suite Suite) {
 			const stateSentinel = "state-leak-sentinel"
 			request := suite.Request
 			request.State = []byte(`{"sensitive":"` + stateSentinel + `"}`)
-			var authorization atomic.Value
+			var credentialHeader atomic.Value
 			withServerObserved(t, []serverReply{{status: http.StatusBadRequest, body: []byte(rawSentinel + credential)}}, func(r *http.Request) {
-				authorization.Store(r.Header.Get("Authorization"))
+				credentialHeader.Store(r.Header.Get("Authorization") + r.Header.Get("X-Api-Key"))
 			}, func(server *httptest.Server, _ *atomic.Int32) {
 				config := defaultConfig(server, noSleep)
 				config.Credential = credential
@@ -194,9 +194,9 @@ func RunProviderContract(t *testing.T, suite Suite) {
 					}
 				}
 			})
-			seenAuthorization, _ := authorization.Load().(string)
-			if !strings.Contains(seenAuthorization, credential) {
-				t.Fatal("credential sentinel was not exercised in request authorization")
+			seenCredentialHeader, _ := credentialHeader.Load().(string)
+			if !strings.Contains(seenCredentialHeader, credential) {
+				t.Fatal("credential sentinel was not exercised in an authentication header")
 			}
 		})
 	})

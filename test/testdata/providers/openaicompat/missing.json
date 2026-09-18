@@ -1,0 +1,1 @@
+{"id":"compat-contract","model":"resolved-contract-model","choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call-1","type":"function","function":{"name":"submit_answers","arguments":"{\"answers\":{\"binary\":{\"type\":\"noul\",\"noul\":0.75}}}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":5}}

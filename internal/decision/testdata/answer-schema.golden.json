@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answers": {
+      "additionalProperties": false,
+      "properties": {
+        "incident_family": {
+          "additionalProperties": false,
+          "properties": {
+            "choice": {
+              "enum": [
+                "application",
+                "configuration",
+                "dependency",
+                "infrastructure",
+                "security",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "confidence": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "probabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "application": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "configuration": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "dependency": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "infrastructure": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "security": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "unknown": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "application",
+                "configuration",
+                "dependency",
+                "infrastructure",
+                "security",
+                "unknown"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "const": "choice",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "choice",
+            "probabilities",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        "likely_transient": {
+          "additionalProperties": false,
+          "properties": {
+            "noul": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "type": {
+              "const": "noul",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "noul"
+          ],
+          "type": "object"
+        },
+        "operational_impact": {
+          "additionalProperties": false,
+          "properties": {
+            "confidence": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "legend": {
+              "additionalProperties": false,
+              "properties": {
+                "0": {
+                  "const": "No current user-visible impact",
+                  "type": "string"
+                },
+                "1": {
+                  "const": "Limited degradation or a working workaround",
+                  "type": "string"
+                },
+                "2": {
+                  "const": "Material degradation affecting multiple users or a critical workload",
+                  "type": "string"
+                },
+                "3": {
+                  "const": "Broad outage, data-loss risk, or security impact",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "0",
+                "1",
+                "2",
+                "3"
+              ],
+              "type": "object"
+            },
+            "probabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "0": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "1": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "2": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "3": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "0",
+                "1",
+                "2",
+                "3"
+              ],
+              "type": "object"
+            },
+            "score": {
+              "maximum": 3,
+              "minimum": 0,
+              "type": "number"
+            },
+            "type": {
+              "const": "score",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "score",
+            "legend",
+            "probabilities",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        "requires_immediate_attention": {
+          "additionalProperties": false,
+          "properties": {
+            "noul": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "type": {
+              "const": "noul",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "noul"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "incident_family",
+        "likely_transient",
+        "operational_impact",
+        "requires_immediate_attention"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "answers"
+  ],
+  "title": "RuleRaven provider answers",
+  "type": "object"
+}

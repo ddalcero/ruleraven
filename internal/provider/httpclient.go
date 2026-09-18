@@ -28,6 +28,11 @@ type HTTPLimits struct {
 	Now              func() time.Time
 }
 
+type HTTPResponse struct {
+	Body   []byte
+	Header http.Header
+}
+
 // DoJSON sends one bounded JSON request and returns one bounded successful
 // response. Error response bodies are never read or retained.
 func DoJSON(
@@ -39,22 +44,40 @@ func DoJSON(
 	body []byte,
 	limits HTTPLimits,
 ) ([]byte, error) {
+	response, err := DoJSONResponse(ctx, client, method, url, headers, body, limits)
+	if err != nil {
+		return nil, err
+	}
+	return response.Body, nil
+}
+
+// DoJSONResponse is DoJSON with access to successful response headers. It
+// retains neither error response bodies nor request headers.
+func DoJSONResponse(
+	ctx context.Context,
+	client HTTPClient,
+	method string,
+	url string,
+	headers http.Header,
+	body []byte,
+	limits HTTPLimits,
+) (HTTPResponse, error) {
 	if client == nil {
-		return nil, fmt.Errorf("provider HTTP client is required")
+		return HTTPResponse{}, fmt.Errorf("provider HTTP client is required")
 	}
 	if limits.MaxRequestBytes <= 0 || limits.MaxResponseBytes <= 0 {
-		return nil, fmt.Errorf("provider HTTP limits must be positive")
+		return HTTPResponse{}, fmt.Errorf("provider HTTP limits must be positive")
 	}
 	if limits.MaxRetryAfter < 0 {
-		return nil, fmt.Errorf("provider maximum Retry-After must not be negative")
+		return HTTPResponse{}, fmt.Errorf("provider maximum Retry-After must not be negative")
 	}
 	if int64(len(body)) > limits.MaxRequestBytes {
-		return nil, ErrRequestTooLarge
+		return HTTPResponse{}, ErrRequestTooLarge
 	}
 
 	request, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build provider request")
+		return HTTPResponse{}, fmt.Errorf("build provider request")
 	}
 	request.Header = headers.Clone()
 	if request.Header == nil {
@@ -67,9 +90,9 @@ func DoJSON(
 	response, err := client.Do(request)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
+			return HTTPResponse{}, ctxErr
 		}
-		return nil, NewTransportError("request", err)
+		return HTTPResponse{}, NewTransportError("request", err)
 	}
 	defer response.Body.Close()
 
@@ -78,23 +101,23 @@ func DoJSON(
 		if limits.MaxRetryAfter > 0 && retryAfter > limits.MaxRetryAfter {
 			retryAfter = limits.MaxRetryAfter
 		}
-		return nil, NewHTTPError("request", response.StatusCode, retryAfter)
+		return HTTPResponse{}, NewHTTPError("request", response.StatusCode, retryAfter)
 	}
 	if response.ContentLength > limits.MaxResponseBytes {
-		return nil, ErrResponseTooLarge
+		return HTTPResponse{}, ErrResponseTooLarge
 	}
 	bounded := io.LimitReader(response.Body, limits.MaxResponseBytes+1)
 	responseBody, err := io.ReadAll(bounded)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
+			return HTTPResponse{}, ctxErr
 		}
-		return nil, NewTransportError("read response", err)
+		return HTTPResponse{}, NewTransportError("read response", err)
 	}
 	if int64(len(responseBody)) > limits.MaxResponseBytes {
-		return nil, ErrResponseTooLarge
+		return HTTPResponse{}, ErrResponseTooLarge
 	}
-	return responseBody, nil
+	return HTTPResponse{Body: responseBody, Header: response.Header.Clone()}, nil
 }
 
 func (l HTTPLimits) now() time.Time {

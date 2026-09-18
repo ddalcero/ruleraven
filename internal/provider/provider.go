@@ -49,15 +49,16 @@ type Usage struct {
 }
 
 type EvaluationResponse struct {
-	Answers         map[string]Answer `json:"answers"`
-	Provider        string            `json:"provider"`
-	RequestedModel  string            `json:"requestedModel"`
-	ResolvedModel   string            `json:"resolvedModel"`
-	RequestID       string            `json:"requestId"`
-	Usage           Usage             `json:"usage"`
-	Latency         time.Duration     `json:"latency"`
-	Attempts        int               `json:"attempts"`
-	RawResponseHash string            `json:"rawResponseHash"`
+	Answers           map[string]Answer `json:"answers"`
+	Provider          string            `json:"provider"`
+	RequestedModel    string            `json:"requestedModel"`
+	ResolvedModel     string            `json:"resolvedModel"`
+	RequestID         string            `json:"requestId"`
+	ProviderRequestID string            `json:"providerRequestId,omitempty"`
+	Usage             Usage             `json:"usage"`
+	Latency           time.Duration     `json:"latency"`
+	Attempts          int               `json:"attempts"`
+	RawResponseHash   string            `json:"rawResponseHash"`
 }
 
 type Provider interface {

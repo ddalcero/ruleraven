@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -21,6 +22,7 @@ type FactoryConfig struct {
 	Retry            RetryPolicy
 	MaxRequestBytes  int64
 	MaxResponseBytes int64
+	Now              func() time.Time
 }
 
 type Factory func(FactoryConfig) (Provider, error)

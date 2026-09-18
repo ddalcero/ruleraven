@@ -41,35 +41,38 @@ production-readiness claim.
 
 ## Architecture
 
-```text
-Kubernetes API (allowlisted read-only watches)
-              |
-              v
-      normalizer + redactor
-              |
-              v
-    stable snapshot + fingerprint
-              |
-              v
-       deterministic rules
-          /             \
- terminal decision    ambiguous
-          |              |
-          |              v
-          |       decision provider
-          |              |
-          +-------+------+
-                  v
-       deterministic decision composer
-                  |
-                  v
- MongoDB transaction: incident + evaluation + outbox
-                  |
-                  v
-          outbox dispatcher
-                  |
-                  v
-       signed generic HTTPS webhook
+```mermaid
+flowchart TD
+  K8S["Kubernetes API<br/>allowlisted read-only watches"]
+  NR["normalizer + redactor"]
+  SNAP["stable snapshot + fingerprint"]
+  RULES["deterministic rules"]
+  TERM["terminal decision"]
+  AMB["ambiguous"]
+  PROV["decision provider"]
+  COMP["deterministic decision composer"]
+  TX["MongoDB transaction<br/>incident + evaluation + outbox"]
+  OUT["outbox dispatcher"]
+  WH["signed generic HTTPS webhook"]
+
+  K8S --> NR --> SNAP --> RULES
+  RULES --> TERM
+  RULES --> AMB --> PROV
+  TERM --> COMP
+  PROV --> COMP
+  COMP --> TX --> OUT --> WH
+
+  classDef src fill:#1d4ed8,stroke:#93c5fd,color:#fff
+  classDef pure fill:#0f766e,stroke:#5eead4,color:#fff
+  classDef branch fill:#b45309,stroke:#fcd34d,color:#fff
+  classDef persist fill:#166534,stroke:#86efac,color:#fff
+  classDef egress fill:#9f1239,stroke:#fda4af,color:#fff
+
+  class K8S src
+  class NR,SNAP,RULES,COMP pure
+  class TERM,AMB,PROV branch
+  class TX,OUT persist
+  class WH egress
 ```
 
 Informer handlers enqueue resource keys; provider and database work runs in

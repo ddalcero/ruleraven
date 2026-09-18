@@ -3,6 +3,8 @@ package controller_test
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"github.com/ddalcero/ruleraven/internal/provider"
 	"github.com/ddalcero/ruleraven/internal/rules"
 	storecontract "github.com/ddalcero/ruleraven/internal/store"
+	"github.com/ddalcero/ruleraven/internal/telemetry"
 )
 
 var fixedNow = time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
@@ -178,6 +181,10 @@ func newReconciler(t *testing.T, resolver *fakeResolver, store *memoryStore, pri
 }
 
 func newReconcilerWithClock(t *testing.T, resolver *fakeResolver, store *memoryStore, primary, fallback provider.Provider, now func() time.Time) *controller.Reconciler {
+	return newReconcilerWithTelemetry(t, resolver, store, primary, fallback, now, nil)
+}
+
+func newReconcilerWithTelemetry(t *testing.T, resolver *fakeResolver, store *memoryStore, primary, fallback provider.Provider, now func() time.Time, metrics *telemetry.Metrics) *controller.Reconciler {
 	t.Helper()
 	normalizer := ravenkube.NewNormalizer(ravenkube.NormalizerOptions{ClusterID: "cluster-a", MaxBytes: 64 << 10})
 	engine := rules.NewEngine(rules.Options{
@@ -189,12 +196,35 @@ func newReconcilerWithClock(t *testing.T, resolver *fakeResolver, store *memoryS
 		Store: store, Primary: primary, Fallback: fallback, Composer: decision.NewComposer(),
 		ProviderConfigHash: "provider-config-v1", Destinations: []string{"operations"},
 		ReconcileTimeout: time.Second, EventQuietPeriod: 15 * time.Minute, Now: now,
-		NewID: func(seed string) string { return "id-" + seed },
+		NewID: func(seed string) string { return "id-" + seed }, Metrics: metrics,
 	})
 	if err != nil {
 		t.Fatalf("NewReconciler: %v", err)
 	}
 	return reconciler
+}
+
+func TestReconcilerEmitsReconcileIncidentAndProviderMetrics(t *testing.T) {
+	metrics := telemetry.NewMetrics()
+	providerSpy := &fakeProvider{response: provider.EvaluationResponse{
+		Answers: operationalAnswers(), Provider: "fake", ResolvedModel: "model-a", Attempts: 2,
+	}}
+	reconciler := newReconcilerWithTelemetry(t, &fakeResolver{object: warningEvent()}, newMemoryStore(), providerSpy, nil, func() time.Time { return fixedNow }, metrics)
+	if _, err := reconciler.Reconcile(context.Background(), ravenkube.ResourceKey{Kind: "Event", Namespace: "watched", Name: "warning.1", UID: "event-uid"}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
+	for _, want := range []string{
+		`ruleraven_reconciliations_total{outcome="success"} 1`,
+		`ruleraven_incident_transitions_total{rule="warning-event",severity="warning",status="open"} 1`,
+		`ruleraven_provider_requests_total{model="model-a",outcome="success",provider="fake"} 1`,
+		`ruleraven_provider_retries_total{model="model-a",provider="fake"} 1`,
+	} {
+		if !strings.Contains(recorder.Body.String(), want) {
+			t.Errorf("metrics missing %q:\n%s", want, recorder.Body.String())
+		}
+	}
 }
 
 func TestFailedJobPipelineIsIdempotentAndSkipsProvider(t *testing.T) {

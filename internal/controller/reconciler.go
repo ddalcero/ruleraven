@@ -42,6 +42,12 @@ type IncidentStore interface {
 	Commit(context.Context, storecontract.CommitRequest) error
 }
 
+type Metrics interface {
+	ObserveReconcile(string, time.Duration)
+	ObserveIncidentTransition(string, string, string)
+	ObserveProviderRequest(string, string, string, time.Duration, int)
+}
+
 type Config struct {
 	ClusterID          string
 	Resolver           ravenkube.Resolver
@@ -57,6 +63,7 @@ type Config struct {
 	EventQuietPeriod   time.Duration
 	Now                func() time.Time
 	NewID              func(string) string
+	Metrics            Metrics
 }
 
 type Result struct{ RequeueAfter time.Duration }
@@ -76,6 +83,7 @@ type Reconciler struct {
 	eventQuietPeriod   time.Duration
 	now                func() time.Time
 	newID              func(string) string
+	metrics            Metrics
 }
 
 func NewReconciler(config Config) (*Reconciler, error) {
@@ -100,11 +108,21 @@ func NewReconciler(config Config) (*Reconciler, error) {
 		rules: config.Rules, store: config.Store, primary: config.Primary, fallback: config.Fallback,
 		composer: config.Composer, providerConfigHash: config.ProviderConfigHash,
 		destinations: destinations, timeout: config.ReconcileTimeout, eventQuietPeriod: config.EventQuietPeriod,
-		now: config.Now, newID: config.NewID,
+		now: config.Now, newID: config.NewID, metrics: config.Metrics,
 	}, nil
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, key ravenkube.ResourceKey) (Result, error) {
+func (r *Reconciler) Reconcile(ctx context.Context, key ravenkube.ResourceKey) (result Result, err error) {
+	started := time.Now()
+	if r.metrics != nil {
+		defer func() {
+			outcome := "success"
+			if err != nil {
+				outcome = "error"
+			}
+			r.metrics.ObserveReconcile(outcome, time.Since(started))
+		}()
+	}
 	if err := key.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -214,6 +232,15 @@ func (r *Reconciler) persist(ctx context.Context, snapshot domain.Snapshot, prev
 	}); err != nil {
 		return fmt.Errorf("commit incident evaluation and outbox: %w", err)
 	}
+	if r.metrics != nil {
+		ruleIDs := decisionValue.RuleIDs
+		if len(ruleIDs) == 0 {
+			ruleIDs = []string{"none"}
+		}
+		for _, ruleID := range ruleIDs {
+			r.metrics.ObserveIncidentTransition(string(status), string(decisionValue.Severity), ruleID)
+		}
+	}
 	return nil
 }
 
@@ -243,7 +270,19 @@ func (r *Reconciler) decide(ctx context.Context, snapshot domain.Snapshot, resul
 }
 
 func (r *Reconciler) evaluateProvider(ctx context.Context, evaluator provider.Provider, request provider.EvaluationRequest) (provider.EvaluationResponse, error) {
+	started := time.Now()
 	response, err := evaluator.Evaluate(ctx, request)
+	if r.metrics != nil {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		model := response.ResolvedModel
+		if model == "" {
+			model = response.RequestedModel
+		}
+		r.metrics.ObserveProviderRequest(evaluator.Name(), model, outcome, time.Since(started), response.Attempts)
+	}
 	if err != nil {
 		return provider.EvaluationResponse{}, err
 	}

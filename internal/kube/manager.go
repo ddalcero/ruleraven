@@ -12,6 +12,7 @@ import (
 
 type ReconcileResult struct{ RequeueAfter time.Duration }
 type ReconcileFunc func(context.Context, ResourceKey) (ReconcileResult, error)
+type QueueMetrics interface{ SetQueueDepth(int) }
 
 type ManagerConfig struct {
 	Client       kubernetes.Interface
@@ -20,21 +21,35 @@ type ManagerConfig struct {
 	Workers      int
 	ResyncPeriod time.Duration
 	Reconcile    ReconcileFunc
+	Metrics      QueueMetrics
+	OnCacheSync  func()
 }
 
 type Manager struct {
-	factory   InformerFactory
-	handler   *EventHandler
-	queue     workqueue.RateLimitingInterface
-	workers   int
-	reconcile ReconcileFunc
+	factory     InformerFactory
+	handler     *EventHandler
+	queue       workqueue.RateLimitingInterface
+	workers     int
+	reconcile   ReconcileFunc
+	metrics     QueueMetrics
+	onCacheSync func()
 }
 
 type queueAdapter struct {
-	queue workqueue.RateLimitingInterface
+	queue   workqueue.RateLimitingInterface
+	metrics QueueMetrics
 }
 
-func (q queueAdapter) Add(key ResourceKey) { q.queue.Add(key) }
+func (q queueAdapter) Add(key ResourceKey) {
+	q.queue.Add(key)
+	q.observe()
+}
+
+func (q queueAdapter) observe() {
+	if q.metrics != nil {
+		q.metrics.SetQueueDepth(q.queue.Len())
+	}
+}
 
 func NewManager(config ManagerConfig) (*Manager, error) {
 	if config.Client == nil || config.Reconcile == nil {
@@ -44,16 +59,22 @@ func NewManager(config ManagerConfig) (*Manager, error) {
 		return nil, fmt.Errorf("manager workers must be positive")
 	}
 	queue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ruleraven")
-	handler := NewEventHandler(config.Namespaces, queueAdapter{queue: queue})
+	handler := NewEventHandler(config.Namespaces, queueAdapter{queue: queue, metrics: config.Metrics})
 	factory, err := NewInformerFactory(config.Client, config.ResyncPeriod, config.Namespaces, config.Resources, handler)
 	if err != nil {
 		queue.ShutDown()
 		return nil, err
 	}
-	return &Manager{factory: factory, handler: handler, queue: queue, workers: config.Workers, reconcile: config.Reconcile}, nil
+	return &Manager{
+		factory: factory, handler: handler, queue: queue, workers: config.Workers,
+		reconcile: config.Reconcile, metrics: config.Metrics, onCacheSync: config.OnCacheSync,
+	}, nil
 }
 
-func (m *Manager) Add(key ResourceKey) { m.queue.Add(key) }
+func (m *Manager) Add(key ResourceKey) {
+	m.queue.Add(key)
+	m.observeQueue()
+}
 
 func (m *Manager) Run(ctx context.Context) error {
 	m.factory.Start(ctx.Done())
@@ -64,6 +85,9 @@ func (m *Manager) Run(ctx context.Context) error {
 			return nil
 		}
 		return fmt.Errorf("Kubernetes informer cache synchronization failed")
+	}
+	if m.onCacheSync != nil {
+		m.onCacheSync()
 	}
 
 	var workers sync.WaitGroup
@@ -87,6 +111,7 @@ func (m *Manager) runWorker(ctx context.Context) {
 		if shutdown {
 			return
 		}
+		m.observeQueue()
 		func() {
 			defer m.queue.Done(item)
 			key, ok := item.(ResourceKey)
@@ -98,13 +123,21 @@ func (m *Manager) runWorker(ctx context.Context) {
 			if err != nil {
 				if ctx.Err() == nil {
 					m.queue.AddRateLimited(key)
+					m.observeQueue()
 				}
 				return
 			}
 			m.queue.Forget(item)
 			if result.RequeueAfter > 0 && ctx.Err() == nil {
 				m.queue.AddAfter(key, result.RequeueAfter)
+				m.observeQueue()
 			}
 		}()
+	}
+}
+
+func (m *Manager) observeQueue() {
+	if m.metrics != nil {
+		m.metrics.SetQueueDepth(m.queue.Len())
 	}
 }

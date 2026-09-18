@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ddalcero/ruleraven/internal/domain"
 	storecontract "github.com/ddalcero/ruleraven/internal/store"
+	"github.com/ddalcero/ruleraven/internal/telemetry"
 )
 
 type fakeOutbox struct {
@@ -43,6 +46,11 @@ func (f *fakeOutbox) RescheduleDelivery(_ context.Context, request storecontract
 	f.rescheduled = append(f.rescheduled, request)
 	return nil
 }
+func (f *fakeOutbox) CountPendingDeliveries(context.Context, time.Time) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.deliveries), nil
+}
 
 type outcomeNotifier struct {
 	name   string
@@ -66,6 +74,33 @@ func (n *outcomeNotifier) Deliver(ctx context.Context, event Envelope) error {
 		}
 	}
 	return n.err
+}
+
+func TestDispatcherEmitsOutboxAndDeliveryMetrics(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	outbox := &fakeOutbox{deliveries: []storecontract.Delivery{delivery("id", "ops", 1)}}
+	metrics := telemetry.NewMetrics()
+	dispatcher, err := NewDispatcher(DispatcherConfig{
+		Store: outbox, Notifiers: []Notifier{&outcomeNotifier{name: "ops"}}, WorkerID: "worker",
+		Workers: 1, ClusterID: "cluster", LeaseDuration: time.Minute, MaxAttempts: 3,
+		InitialBackoff: time.Second, MaxBackoff: time.Minute, Now: func() time.Time { return now }, Metrics: metrics,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dispatcher.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
+	for _, want := range []string{
+		`ruleraven_outbox_pending 0`,
+		`ruleraven_delivery_attempts_total{destination="ops",outcome="success"} 1`,
+	} {
+		if !strings.Contains(recorder.Body.String(), want) {
+			t.Errorf("metrics missing %q:\n%s", want, recorder.Body.String())
+		}
+	}
 }
 
 func TestDispatcherCompletesDeliveryAndPreservesEventID(t *testing.T) {

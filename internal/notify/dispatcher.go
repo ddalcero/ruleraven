@@ -18,6 +18,15 @@ type OutboxStore interface {
 	RescheduleDelivery(context.Context, storecontract.RescheduleRequest) error
 }
 
+type DeliveryMetrics interface {
+	SetOutboxPending(int)
+	ObserveDeliveryAttempt(string, string)
+}
+
+type pendingCounter interface {
+	CountPendingDeliveries(context.Context, time.Time) (int, error)
+}
+
 type DispatcherConfig struct {
 	Store           OutboxStore
 	Notifiers       []Notifier
@@ -31,6 +40,7 @@ type DispatcherConfig struct {
 	DeliveredExpiry time.Duration
 	FailedExpiry    time.Duration
 	Now             func() time.Time
+	Metrics         DeliveryMetrics
 }
 
 type Dispatcher struct {
@@ -46,6 +56,7 @@ type Dispatcher struct {
 	deliveredExpiry time.Duration
 	failedExpiry    time.Duration
 	now             func() time.Time
+	metrics         DeliveryMetrics
 }
 
 func NewDispatcher(config DispatcherConfig) (*Dispatcher, error) {
@@ -79,7 +90,7 @@ func NewDispatcher(config DispatcherConfig) (*Dispatcher, error) {
 		workers: config.Workers, clusterID: config.ClusterID, leaseDuration: config.LeaseDuration,
 		maxAttempts: config.MaxAttempts, initialBackoff: config.InitialBackoff,
 		maxBackoff: config.MaxBackoff, deliveredExpiry: config.DeliveredExpiry,
-		failedExpiry: config.FailedExpiry, now: config.Now,
+		failedExpiry: config.FailedExpiry, now: config.Now, metrics: config.Metrics,
 	}, nil
 }
 
@@ -92,6 +103,7 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 	now := d.now().UTC()
 	delivery, err := d.store.ClaimDelivery(ctx, storecontract.ClaimRequest{WorkerID: d.workerID, Now: now, LeaseDuration: d.leaseDuration})
 	if errors.Is(err, storecontract.ErrNotFound) {
+		d.updatePending(ctx, now)
 		return false, nil
 	}
 	if err != nil {
@@ -122,6 +134,10 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 		request.ExpiresAt = expiry(request.CompletedAt, d.deliveredExpiry)
 		if err := d.store.CompleteDelivery(ctx, request); err != nil {
 			return true, fmt.Errorf("complete notification delivery: %w", err)
+		}
+		if d.metrics != nil {
+			d.metrics.ObserveDeliveryAttempt(delivery.DestinationID, "success")
+			d.updatePending(ctx, request.CompletedAt)
 		}
 		return true, nil
 	}
@@ -155,7 +171,29 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 	if err := d.store.RescheduleDelivery(ctx, request); err != nil {
 		return true, fmt.Errorf("finalize failed notification delivery: %w", err)
 	}
+	if d.metrics != nil {
+		outcome := "permanent"
+		if failure == storecontract.FailureRetryable {
+			outcome = "retryable"
+		}
+		d.metrics.ObserveDeliveryAttempt(delivery.DestinationID, outcome)
+		d.updatePending(ctx, requestNow)
+	}
 	return true, nil
+}
+
+func (d *Dispatcher) updatePending(ctx context.Context, now time.Time) {
+	if d.metrics == nil {
+		return
+	}
+	counter, ok := d.store.(pendingCounter)
+	if !ok {
+		return
+	}
+	pending, err := counter.CountPendingDeliveries(ctx, now)
+	if err == nil {
+		d.metrics.SetOutboxPending(pending)
+	}
 }
 
 // Run drains currently eligible deliveries with independent workers. Callers may

@@ -41,39 +41,29 @@ production-readiness claim.
 
 ## Architecture
 
+<!-- markdownlint-disable MD013 -->
+
 ```mermaid
 flowchart TD
   K8S["Kubernetes API<br/>allowlisted read-only watches"]
   NR["normalizer + redactor"]
   SNAP["stable snapshot + fingerprint"]
   RULES["deterministic rules"]
+  DEC{"rules result?"}
   TERM["terminal decision"]
-  AMB["ambiguous"]
   PROV["decision provider"]
   COMP["deterministic decision composer"]
-  TX["MongoDB transaction<br/>incident + evaluation + outbox"]
+  TX["MongoDB transaction<br/>incident + evaluation + outbox<br/>fingerprint = idempotency key"]
   OUT["outbox dispatcher"]
   WH["signed generic HTTPS webhook"]
 
-  K8S --> NR --> SNAP --> RULES
-  RULES --> TERM
-  RULES --> AMB --> PROV
-  TERM --> COMP
-  PROV --> COMP
+  K8S --> NR --> SNAP --> RULES --> DEC
+  DEC -->|"result == terminal"| TERM --> COMP
+  DEC -->|"result == ambiguous"| PROV --> COMP
   COMP --> TX --> OUT --> WH
-
-  classDef src fill:#1d4ed8,stroke:#93c5fd,color:#fff
-  classDef pure fill:#0f766e,stroke:#5eead4,color:#fff
-  classDef branch fill:#b45309,stroke:#fcd34d,color:#fff
-  classDef persist fill:#166534,stroke:#86efac,color:#fff
-  classDef egress fill:#9f1239,stroke:#fda4af,color:#fff
-
-  class K8S src
-  class NR,SNAP,RULES,COMP pure
-  class TERM,AMB,PROV branch
-  class TX,OUT persist
-  class WH egress
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 Informer handlers enqueue resource keys; provider and database work runs in
 workers. Reconciliation is idempotent, and stable event IDs let webhook

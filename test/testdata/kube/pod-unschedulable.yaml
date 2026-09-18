@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending-pod
+  namespace: default
+  uid: pending-pod-uid
+  labels:
+    app: worker
+    unsafe-label: LEAK_SENTINEL_DO_NOT_COPY
+  annotations:
+    access-token: LEAK_SENTINEL_DO_NOT_COPY
+spec:
+  containers:
+    - name: worker
+      image: example.invalid/worker:latest
+      env:
+        - name: PASSWORD
+          value: LEAK_SENTINEL_DO_NOT_COPY
+status:
+  phase: Pending
+  conditions:
+    - type: PodScheduled
+      status: "False"
+      reason: Unschedulable
+      message: "0/3 nodes are available"
+  containerStatuses:
+    - name: worker
+      ready: false
+      restartCount: 0
+      state:
+        waiting:
+          reason: ContainerCreating

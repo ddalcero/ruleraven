@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: default
+  uid: deployment-uid
+  generation: 3
+  labels:
+    app: api
+    unsafe-label: LEAK_SENTINEL_DO_NOT_COPY
+  annotations:
+    token: LEAK_SENTINEL_DO_NOT_COPY
+spec:
+  replicas: 5
+  template:
+    spec:
+      containers:
+        - name: api
+          image: example.invalid/api:latest
+          command: [LEAK_SENTINEL_DO_NOT_COPY]
+status:
+  replicas: 4
+  readyReplicas: 2
+  availableReplicas: 2
+  updatedReplicas: 3
+  unavailableReplicas: 3
+  conditions:
+    - type: Progressing
+      status: "True"
+      reason: NewReplicaSetAvailable
+    - type: Available
+      status: "False"
+      reason: MinimumReplicasUnavailable
+      message: LEAK_SENTINEL_DO_NOT_COPY
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: database
+  namespace: default
+  uid: statefulset-uid
+  labels:
+    app: database
+spec:
+  replicas: 3
+  serviceName: database
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+        - name: database
+          image: example.invalid/database:latest
+          env:
+            - name: PASSWORD
+              value: LEAK_SENTINEL_DO_NOT_COPY
+status:
+  replicas: 3
+  currentReplicas: 2
+  readyReplicas: 1
+  availableReplicas: 1
+  updatedReplicas: 2
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: PodsNotReady
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  namespace: agents
+  uid: daemonset-uid
+  labels:
+    app: node-agent
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      labels:
+        app: node-agent
+    spec:
+      containers:
+        - name: agent
+          image: example.invalid/agent:latest
+          args: [LEAK_SENTINEL_DO_NOT_COPY]
+status:
+  desiredNumberScheduled: 6
+  currentNumberScheduled: 5
+  numberReady: 4
+  numberAvailable: 3
+  updatedNumberScheduled: 5
+  numberUnavailable: 3
+  conditions:
+    - type: Available
+      status: "False"
+      reason: NodesUnavailable

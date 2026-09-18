@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: report-job
+  namespace: default
+  uid: job-uid
+  labels:
+    app: reports
+    unsafe-label: LEAK_SENTINEL_DO_NOT_COPY
+  annotations:
+    credential: LEAK_SENTINEL_DO_NOT_COPY
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: report
+          image: example.invalid/report:latest
+          env:
+            - name: API_TOKEN
+              value: LEAK_SENTINEL_DO_NOT_COPY
+status:
+  active: 0
+  succeeded: 1
+  failed: 4
+  conditions:
+    - type: Complete
+      status: "False"
+    - type: Failed
+      status: "True"
+      reason: BackoffLimitExceeded
+      message: LEAK_SENTINEL_DO_NOT_COPY

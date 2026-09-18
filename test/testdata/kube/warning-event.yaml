@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Event
+metadata:
+  name: api-pod.backoff
+  namespace: default
+  uid: event-uid
+  labels:
+    app: api
+  annotations:
+    authorization: LEAK_SENTINEL_DO_NOT_COPY
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  namespace: default
+  name: api-pod
+  uid: pod-uid
+reason: BackOff
+message: 'Back-off restarting failed container; token=LEAK_SENTINEL_DO_NOT_COPY'
+type: Warning
+count: 7
+lastTimestamp: "2026-09-18T00:01:00Z"
+source:
+  component: kubelet

@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-pod
+  namespace: default
+  uid: pod-uid
+  resourceVersion: "99"
+  generation: 2
+  labels:
+    app: api
+    team: platform
+    unsafe-label: LEAK_SENTINEL_DO_NOT_COPY
+  annotations:
+    arbitrary.example/value: LEAK_SENTINEL_DO_NOT_COPY
+  ownerReferences:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: api
+      uid: owner-uid
+      controller: true
+  managedFields:
+    - manager: LEAK_SENTINEL_DO_NOT_COPY
+      operation: Update
+      apiVersion: v1
+      fieldsType: FieldsV1
+spec:
+  containers:
+    - name: api
+      image: example.invalid/api:latest
+      command: [LEAK_SENTINEL_DO_NOT_COPY]
+      args: [LEAK_SENTINEL_DO_NOT_COPY]
+      env:
+        - name: TOKEN
+          value: LEAK_SENTINEL_DO_NOT_COPY
+      envFrom:
+        - secretRef:
+            name: private-values
+    - name: sidecar
+      image: example.invalid/sidecar:latest
+      env:
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: private-values
+              key: password
+status:
+  phase: Running
+  conditions:
+    - type: PodScheduled
+      status: "True"
+    - type: Ready
+      status: "False"
+      reason: ContainersNotReady
+      message: containers are not ready
+  containerStatuses:
+    - name: sidecar
+      ready: true
+      restartCount: 0
+      state:
+        running:
+          startedAt: "2026-09-18T00:00:00Z"
+    - name: api
+      ready: false
+      restartCount: 5
+      state:
+        waiting:
+          reason: CrashLoopBackOff
+          message: back-off restarting container

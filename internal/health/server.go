@@ -37,11 +37,18 @@ func (r *Readiness) mark(check uint32) {
 	}
 }
 
-type handlerOptions struct{ readiness *Readiness }
+type handlerOptions struct {
+	readiness *Readiness
+	metrics   http.Handler
+}
 type HandlerOption func(*handlerOptions)
 
 func WithReadiness(readiness *Readiness) HandlerOption {
 	return func(options *handlerOptions) { options.readiness = readiness }
+}
+
+func WithMetrics(handler http.Handler) HandlerOption {
+	return func(options *handlerOptions) { options.metrics = handler }
 }
 
 // Server exposes process health over HTTP.
@@ -82,14 +89,17 @@ func NewHandler(options ...HandlerOption) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
+	if configuration.metrics != nil {
+		mux.Handle("/metrics", configuration.metrics)
+	}
 	return mux
 }
 
 // NewServer creates a health server with explicit network timeouts.
-func NewServer(address string, readTimeout, writeTimeout, idleTimeout time.Duration) *Server {
+func NewServer(address string, readTimeout, writeTimeout, idleTimeout time.Duration, options ...HandlerOption) *Server {
 	return &Server{httpServer: &http.Server{
 		Addr:         address,
-		Handler:      NewHandler(),
+		Handler:      NewHandler(options...),
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 		IdleTimeout:  idleTimeout,

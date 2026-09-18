@@ -33,6 +33,7 @@ import (
 	"github.com/ddalcero/ruleraven/internal/rules"
 	storecontract "github.com/ddalcero/ruleraven/internal/store"
 	mongostore "github.com/ddalcero/ruleraven/internal/store/mongo"
+	"github.com/ddalcero/ruleraven/internal/telemetry"
 )
 
 const (
@@ -93,6 +94,9 @@ func ConfigOptions(providerRegistry *provider.Registry, notifierRegistry *notify
 }
 
 func NewProduction(ctx context.Context, cfg config.Config, options ProductionOptions) (*App, error) {
+	readiness := health.NewReadiness()
+	metrics := telemetry.NewMetrics()
+	readiness.MarkConfigValidated()
 	if options.LookupEnv == nil {
 		options.LookupEnv = os.LookupEnv
 	}
@@ -150,6 +154,7 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		}
 		return nil, fmt.Errorf("initialize MongoDB store: %w", err)
 	}
+	readiness.MarkMongoReady()
 	cleanup := func(buildErr error) (*App, error) {
 		closeCtx, cancel := context.WithTimeout(context.Background(), cfg.Mongo.Timeout.Duration)
 		defer cancel()
@@ -176,14 +181,14 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		ClusterID: cfg.Cluster.ID, Resolver: resolver, Normalizer: normalizer, Rules: engine, Store: store,
 		Primary: primary, Fallback: fallback, Composer: decision.NewComposer(), ProviderConfigHash: providerHash,
 		Destinations: destinationIDs, ReconcileTimeout: cfg.Controller.ReconcileTimeout.Duration,
-		EventQuietPeriod: cfg.Rules.EventQuietPeriod.Duration, Now: options.Now, NewID: controller.StableID,
+		EventQuietPeriod: cfg.Rules.EventQuietPeriod.Duration, Now: options.Now, NewID: controller.StableID, Metrics: metrics,
 	})
 	if err != nil {
 		return cleanup(err)
 	}
 	manager, err := ravenkube.NewManager(ravenkube.ManagerConfig{
 		Client: client, Namespaces: cfg.Cluster.WatchNamespaces, Resources: cfg.Cluster.Resources,
-		Workers: cfg.Controller.Workers, Reconcile: func(ctx context.Context, key ravenkube.ResourceKey) (ravenkube.ReconcileResult, error) {
+		Workers: cfg.Controller.Workers, Metrics: metrics, OnCacheSync: readiness.MarkInformersSynced, Reconcile: func(ctx context.Context, key ravenkube.ResourceKey) (ravenkube.ReconcileResult, error) {
 			result, reconcileErr := reconciler.Reconcile(ctx, key)
 			return ravenkube.ReconcileResult{RequeueAfter: result.RequeueAfter}, reconcileErr
 		},
@@ -211,12 +216,12 @@ func NewProduction(ctx context.Context, cfg config.Config, options ProductionOpt
 		Store: store, Notifiers: notifiers, WorkerID: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 		Workers: cfg.Controller.Workers, ClusterID: cfg.Cluster.ID, LeaseDuration: dispatchLeaseDuration,
 		MaxAttempts: cfg.Notifications.Retry.MaxAttempts, InitialBackoff: cfg.Notifications.Retry.InitialBackoff.Duration,
-		MaxBackoff: cfg.Notifications.Retry.MaxBackoff.Duration, Now: options.Now,
+		MaxBackoff: cfg.Notifications.Retry.MaxBackoff.Duration, Now: options.Now, Metrics: metrics,
 	})
 	if err != nil {
 		return cleanup(err)
 	}
-	healthServer := health.NewServer(cfg.HTTP.Address, cfg.HTTP.ReadTimeout.Duration, cfg.HTTP.WriteTimeout.Duration, cfg.HTTP.IdleTimeout.Duration)
+	healthServer := health.NewServer(cfg.HTTP.Address, cfg.HTTP.ReadTimeout.Duration, cfg.HTTP.WriteTimeout.Duration, cfg.HTTP.IdleTimeout.Duration, health.WithReadiness(readiness), health.WithMetrics(metrics.Handler()))
 	application, err := New(Config{
 		Runners: []Runner{manager, sweeper, PeriodicRunner{Runner: dispatcher, Interval: dispatchPollInterval}, healthServer},
 		Closers: []Closer{store}, ShutdownTimeout: shutdownTimeout,

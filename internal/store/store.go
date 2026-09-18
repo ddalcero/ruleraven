@@ -69,6 +69,8 @@ type RescheduleRequest struct {
 // Store is the persistence boundary used by reconciliation and delivery.
 type Store interface {
 	Ready(context.Context) error
+	GetIncident(context.Context, string, string) (domain.Incident, error)
+	ListOpenIncidents(context.Context) ([]domain.Incident, error)
 	UpsertSnapshot(context.Context, string, domain.Snapshot, *time.Time) (Snapshot, bool, error)
 	UpsertIncident(context.Context, domain.Incident, *time.Time) (domain.Incident, bool, error)
 	UpdateIncident(context.Context, domain.Incident, int64, *time.Time) error

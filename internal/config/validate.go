@@ -7,6 +7,9 @@ import (
 )
 
 var administrativeDatabases = map[string]struct{}{"admin": {}, "local": {}, "config": {}}
+var supportedKubernetesResources = map[string]struct{}{
+	"pods": {}, "events": {}, "deployments": {}, "statefulsets": {}, "daemonsets": {}, "jobs": {},
+}
 
 // Validate enforces safety boundaries and registry-backed types.
 func Validate(cfg Config, options Options) error {
@@ -19,10 +22,36 @@ func Validate(cfg Config, options Options) error {
 	if cfg.Cluster.ClusterWide && cfg.Cluster.NamespaceOnly {
 		return fmt.Errorf("cluster.namespaceOnly cannot be true with clusterWide")
 	}
+	if !cfg.Cluster.ClusterWide && len(cfg.Cluster.WatchNamespaces) == 0 {
+		return fmt.Errorf("cluster.watchNamespaces is required unless clusterWide is true")
+	}
+	seenNamespaces := make(map[string]struct{}, len(cfg.Cluster.WatchNamespaces))
+	for _, namespace := range cfg.Cluster.WatchNamespaces {
+		namespace = strings.TrimSpace(namespace)
+		if namespace == "" {
+			return fmt.Errorf("cluster.watchNamespaces must not contain empty values")
+		}
+		if _, duplicate := seenNamespaces[namespace]; duplicate {
+			return fmt.Errorf("duplicate watch namespace %q", namespace)
+		}
+		seenNamespaces[namespace] = struct{}{}
+	}
+	if len(cfg.Cluster.Resources) == 0 {
+		return fmt.Errorf("cluster.resources must contain at least one supported resource")
+	}
+	seenResources := make(map[string]struct{}, len(cfg.Cluster.Resources))
 	for _, resource := range cfg.Cluster.Resources {
-		if strings.EqualFold(strings.TrimSpace(resource), "secret") || strings.EqualFold(strings.TrimSpace(resource), "secrets") {
+		resource = strings.ToLower(strings.TrimSpace(resource))
+		if resource == "secret" || resource == "secrets" {
 			return fmt.Errorf("watching Secret resources is forbidden")
 		}
+		if _, supported := supportedKubernetesResources[resource]; !supported {
+			return fmt.Errorf("unsupported Kubernetes resource %q", resource)
+		}
+		if _, duplicate := seenResources[resource]; duplicate {
+			return fmt.Errorf("duplicate Kubernetes resource %q", resource)
+		}
+		seenResources[resource] = struct{}{}
 	}
 	if cfg.Controller.Workers <= 0 {
 		return fmt.Errorf("controller.workers must be positive")

@@ -12,6 +12,38 @@ import (
 	drivermongo "go.mongodb.org/mongo-driver/mongo"
 )
 
+func (s *Store) GetIncident(ctx context.Context, clusterID, incidentKey string) (domain.Incident, error) {
+	if strings.TrimSpace(clusterID) == "" || strings.TrimSpace(incidentKey) == "" {
+		return domain.Incident{}, fmt.Errorf("cluster ID and incident key are required")
+	}
+	var document incidentDocument
+	err := s.incidents.FindOne(ctx, bson.D{{Key: "cluster_id", Value: clusterID}, {Key: "incident_key", Value: incidentKey}}).Decode(&document)
+	if err == drivermongo.ErrNoDocuments {
+		return domain.Incident{}, storecontract.ErrNotFound
+	}
+	if err != nil {
+		return domain.Incident{}, fmt.Errorf("get incident: %w", err)
+	}
+	return incidentFromDocument(document), nil
+}
+
+func (s *Store) ListOpenIncidents(ctx context.Context) ([]domain.Incident, error) {
+	cursor, err := s.incidents.Find(ctx, bson.D{{Key: "status", Value: domain.IncidentOpen}})
+	if err != nil {
+		return nil, fmt.Errorf("list open incidents: %w", err)
+	}
+	defer cursor.Close(ctx)
+	var documents []incidentDocument
+	if err := cursor.All(ctx, &documents); err != nil {
+		return nil, fmt.Errorf("decode open incidents: %w", err)
+	}
+	incidents := make([]domain.Incident, 0, len(documents))
+	for _, document := range documents {
+		incidents = append(incidents, incidentFromDocument(document))
+	}
+	return incidents, nil
+}
+
 func (s *Store) UpsertIncident(ctx context.Context, incident domain.Incident, expiresAt *time.Time) (domain.Incident, bool, error) {
 	if err := validateIncident(incident); err != nil {
 		return domain.Incident{}, false, err

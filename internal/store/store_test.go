@@ -12,6 +12,10 @@ import (
 type contractStore struct{}
 
 func (contractStore) Ready(context.Context) error { return nil }
+func (contractStore) GetIncident(context.Context, string, string) (domain.Incident, error) {
+	return domain.Incident{}, ErrNotFound
+}
+func (contractStore) ListOpenIncidents(context.Context) ([]domain.Incident, error) { return nil, nil }
 func (contractStore) UpsertSnapshot(context.Context, string, domain.Snapshot, *time.Time) (Snapshot, bool, error) {
 	return Snapshot{}, false, nil
 }

@@ -6,11 +6,11 @@ toolchain go1.22.2
 
 require (
 	github.com/testcontainers/testcontainers-go v0.33.0
-	go.mongodb.org/mongo-driver v1.17.9
+	go.mongodb.org/mongo-driver v1.17.10
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.30.1
-	k8s.io/apimachinery v0.30.1
-	k8s.io/client-go v0.30.1
+	k8s.io/api v0.30.14
+	k8s.io/apimachinery v0.30.14
+	k8s.io/client-go v0.30.14
 	sigs.k8s.io/yaml v1.4.0
 )
 

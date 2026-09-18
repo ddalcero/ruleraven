@@ -128,6 +128,7 @@ type outboxDocument struct {
 	Status        domain.NotificationStatus `bson:"status"`
 	Attempts      int                       `bson:"attempts"`
 	NextAttemptAt time.Time                 `bson:"next_attempt_at"`
+	Payload       []byte                    `bson:"payload,omitempty"`
 	LeaseOwner    string                    `bson:"lease_owner,omitempty"`
 	LeaseUntil    *time.Time                `bson:"lease_until,omitempty"`
 	LastFailure   string                    `bson:"last_failure,omitempty"`
@@ -206,9 +207,9 @@ func evaluationToDocument(value domain.Evaluation, expiresAt *time.Time) evaluat
 }
 
 func outboxToDocument(value domain.Notification, now time.Time, expiresAt *time.Time) outboxDocument {
-	return outboxDocument{ID: value.ID, EvaluationID: value.EvaluationID, DestinationID: value.DestinationID, EventType: value.EventType, Status: value.Status, Attempts: value.Attempts, NextAttemptAt: value.NextAttemptAt, UpdatedAt: now, ExpiresAt: expiresAt}
+	return outboxDocument{ID: value.ID, EvaluationID: value.EvaluationID, DestinationID: value.DestinationID, EventType: value.EventType, Status: value.Status, Attempts: value.Attempts, NextAttemptAt: value.NextAttemptAt, Payload: append([]byte(nil), value.Payload...), UpdatedAt: now, ExpiresAt: expiresAt}
 }
 
 func deliveryFromDocument(value outboxDocument) storecontract.Delivery {
-	return storecontract.Delivery{Notification: domain.Notification{ID: value.ID, EvaluationID: value.EvaluationID, DestinationID: value.DestinationID, EventType: value.EventType, Status: value.Status, Attempts: value.Attempts, NextAttemptAt: value.NextAttemptAt}, LeaseOwner: value.LeaseOwner, LeaseUntil: value.LeaseUntil, LastFailure: storecontract.FailureClass(value.LastFailure), DeliveredAt: value.DeliveredAt, ExpiresAt: value.ExpiresAt}
+	return storecontract.Delivery{Notification: domain.Notification{ID: value.ID, EvaluationID: value.EvaluationID, DestinationID: value.DestinationID, EventType: value.EventType, Status: value.Status, Attempts: value.Attempts, NextAttemptAt: value.NextAttemptAt, Payload: append([]byte(nil), value.Payload...)}, LeaseOwner: value.LeaseOwner, LeaseUntil: value.LeaseUntil, LastFailure: storecontract.FailureClass(value.LastFailure), DeliveredAt: value.DeliveredAt, ExpiresAt: value.ExpiresAt}
 }

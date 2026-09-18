@@ -20,9 +20,11 @@ import (
 const Type = "webhook"
 
 const (
-	headerEventID   = "X-RuleRaven-Event-ID"
-	headerSignature = "X-RuleRaven-Signature"
-	headerTimestamp = "X-RuleRaven-Timestamp"
+	headerEventID            = "X-RuleRaven-Event-ID"
+	headerSignature          = "X-RuleRaven-Signature"
+	headerTimestamp          = "X-RuleRaven-Timestamp"
+	headerGenericSignatureV2 = "X-Webhook-Signature-V2"
+	headerGenericTimestamp   = "X-Webhook-Timestamp"
 )
 
 type Webhook struct {
@@ -129,8 +131,14 @@ func (w *Webhook) Deliver(ctx context.Context, event notify.Envelope) error {
 	}
 	req.Header.Set("Content-Type", "application/cloudevents+json")
 	req.Header.Set(headerEventID, event.ID)
-	req.Header.Set(headerTimestamp, strconv.FormatInt(timestamp.Unix(), 10))
-	req.Header.Set(headerSignature, "v1="+notify.Sign(w.secret, timestamp, body))
+	timestampValue := strconv.FormatInt(timestamp.Unix(), 10)
+	signature := notify.Sign(w.secret, timestamp, body)
+	req.Header.Set(headerTimestamp, timestampValue)
+	req.Header.Set(headerSignature, "v1="+signature)
+	// Generic HMAC V2 is understood by Hermes and other webhook consumers. It
+	// signs the same "<timestamp>.<body>" bytes as the namespaced headers.
+	req.Header.Set(headerGenericTimestamp, timestampValue)
+	req.Header.Set(headerGenericSignatureV2, signature)
 
 	response, err := w.client.Do(req)
 	if err != nil {

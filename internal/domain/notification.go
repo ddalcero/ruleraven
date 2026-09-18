@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type NotificationStatus string
 
@@ -19,4 +22,5 @@ type Notification struct {
 	Status        NotificationStatus `json:"status"`
 	Attempts      int                `json:"attempts"`
 	NextAttemptAt time.Time          `json:"nextAttemptAt"`
+	Payload       json.RawMessage    `json:"payload,omitempty"`
 }

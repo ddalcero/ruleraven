@@ -40,6 +40,12 @@ func TestDeliverSendsExactSignedCloudEvent(t *testing.T) {
 		if !strings.HasPrefix(signature, "v1=") || !notify.Verify(secret, now, body, strings.TrimPrefix(signature, "v1=")) {
 			t.Errorf("invalid signature %q for body %s", signature, body)
 		}
+		if got := r.Header.Get("X-Webhook-Timestamp"); got != "1789732800" {
+			t.Errorf("generic timestamp = %q", got)
+		}
+		if got := r.Header.Get("X-Webhook-Signature-V2"); got != strings.TrimPrefix(signature, "v1=") {
+			t.Errorf("generic signature = %q", got)
+		}
 		var envelope notify.Envelope
 		if err := json.Unmarshal(body, &envelope); err != nil {
 			t.Fatal(err)

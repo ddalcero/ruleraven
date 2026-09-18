@@ -115,10 +115,14 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 	if !found {
 		deliveryErr = &Error{Kind: "unknown_destination"}
 	} else {
-		data, marshalErr := json.Marshal(struct {
-			EvaluationID  string `json:"evaluationId"`
-			DestinationID string `json:"destinationId"`
-		}{EvaluationID: delivery.EvaluationID, DestinationID: delivery.DestinationID})
+		data := append(json.RawMessage(nil), delivery.Payload...)
+		var marshalErr error
+		if len(data) == 0 {
+			data, marshalErr = json.Marshal(struct {
+				EvaluationID  string `json:"evaluationId"`
+				DestinationID string `json:"destinationId"`
+			}{EvaluationID: delivery.EvaluationID, DestinationID: delivery.DestinationID})
+		}
 		if marshalErr != nil {
 			return true, fmt.Errorf("marshal notification data: %w", marshalErr)
 		}

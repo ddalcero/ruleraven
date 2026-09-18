@@ -226,7 +226,7 @@ func (r *Reconciler) persist(ctx context.Context, snapshot domain.Snapshot, prev
 	if status == domain.IncidentResolved {
 		eventType = eventResolved
 	}
-	deliveries := r.deliveries(evaluationID, eventType, decisionValue, status, now)
+	deliveries := r.deliveries(incident, snapshot, evaluationID, eventType, decisionValue, status, now)
 	if err := r.store.Commit(ctx, storecontract.CommitRequest{
 		Incident: incident, ExpectedVersion: incident.Version, Evaluation: evaluation, Deliveries: deliveries,
 	}); err != nil {
@@ -323,14 +323,26 @@ func (r *Reconciler) resolveDeletion(ctx context.Context, key ravenkube.Resource
 	return r.persist(ctx, snapshot, &previous, result, now)
 }
 
-func (r *Reconciler) deliveries(evaluationID, eventType string, decisionValue domain.Decision, status domain.IncidentStatus, now time.Time) []domain.Notification {
+func (r *Reconciler) deliveries(incident domain.Incident, snapshot domain.Snapshot, evaluationID, eventType string, decisionValue domain.Decision, status domain.IncidentStatus, now time.Time) []domain.Notification {
 	if status != domain.IncidentResolved && decisionValue.Action != domain.ActionNotify && decisionValue.Action != domain.ActionPage {
 		return nil
 	}
 	result := make([]domain.Notification, 0, len(r.destinations))
+	payload, _ := json.Marshal(struct {
+		IncidentID   string                `json:"incident_id"`
+		EvaluationID string                `json:"evaluation_id"`
+		Status       domain.IncidentStatus `json:"status"`
+		Severity     domain.Severity       `json:"severity"`
+		Action       domain.Action         `json:"action"`
+		Summary      string                `json:"summary"`
+		Resource     domain.Source         `json:"resource"`
+		RuleIDs      []string              `json:"rule_ids"`
+		ReasonCodes  []string              `json:"reason_codes"`
+		ObservedAt   time.Time             `json:"observed_at"`
+	}{incident.ID, evaluationID, status, decisionValue.Severity, decisionValue.Action, decisionValue.Summary, snapshot.Source, decisionValue.RuleIDs, decisionValue.ReasonCodes, snapshot.ObservedAt})
 	for _, destination := range r.destinations {
 		id := r.newID(strings.Join([]string{"delivery", evaluationID, destination, eventType}, "\x00"))
-		result = append(result, domain.Notification{ID: id, EvaluationID: evaluationID, DestinationID: destination, EventType: eventType, Status: domain.NotificationPending, NextAttemptAt: now})
+		result = append(result, domain.Notification{ID: id, EvaluationID: evaluationID, DestinationID: destination, EventType: eventType, Status: domain.NotificationPending, NextAttemptAt: now, Payload: append(json.RawMessage(nil), payload...)})
 	}
 	return result
 }

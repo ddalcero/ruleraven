@@ -84,7 +84,7 @@ def assert_lease_role(documents: list[dict[str, Any]]) -> None:
 
 def assert_deployment(documents: list[dict[str, Any]]) -> None:
     deployment = one(documents, "Deployment")
-    assert deployment["spec"]["replicas"] == 2
+    assert deployment["spec"]["replicas"] == 1
     pod = deployment["spec"]["template"]
     assert "checksum/config" in pod["metadata"]["annotations"]
     spec = pod["spec"]

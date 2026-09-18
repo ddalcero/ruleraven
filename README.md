@@ -1,5 +1,7 @@
 # RuleRaven
 
+![RuleRaven — Kubernetes incident triage controller](docs/assets/ruleraven-header.jpeg)
+
 > **Alpha — under active development.** RuleRaven has a working controller,
 > container build, and Helm chart, but no stable release or production-support
 > guarantee. Configuration, schemas, and behavior may change without notice.

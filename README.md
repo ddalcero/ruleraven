@@ -70,6 +70,14 @@ workers. Reconciliation is idempotent, and stable event IDs let webhook
 consumers deduplicate at-least-once delivery. Startup readiness requires valid
 configuration, verified MongoDB indexes, and synchronized Kubernetes informers.
 
+## Use cases and recipes
+
+The [use-case collection](docs/use-cases/README.md) documents practical,
+consumer-neutral integrations. The first case history shows how deterministic
+rules, pinned Jev classification, signed webhooks, and an optional Hermes bot can
+provide concise live incident triage without granting webhook content a general
+shell.
+
 ## Safety boundaries
 
 Safety is enforced in configuration, normalization, RBAC, and adapters rather

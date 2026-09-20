@@ -27,7 +27,7 @@ helm-test:
 	python3 deploy/helm/ruleraven/tests/chart_assertions.py
 
 docs:
-	npx --yes markdownlint-cli2@0.18.1 README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md 'docs/operations/**/*.md'
+	npx --yes markdownlint-cli2@0.18.1 README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md 'docs/**/*.md'
 
 docker-build:
 	docker build --file deploy/docker/Dockerfile --tag ruleraven:local .
